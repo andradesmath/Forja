@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14161a">
+<meta name="description" content="Treino de força com autorregulação, progressão de carga e cálculo de anilhas.">
+<title>FORJA — Treino de Força</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+/* ============================================================
+   FORJA — tokens
+   Paleta: ferro fundido (fundo), cal (texto), óxido (carga),
+   verde seco (leve), âmbar (boa), tijolo (pesada)
+   ============================================================ */
+:root{
+  --iron-900:#14161a;
+  --iron-800:#1b1e24;
+  --iron-700:#232730;
+  --iron-600:#2e333e;
+  --line:#343a46;
+  --cal:#e6ebef;
+  --cal-dim:#98a1ad;
+  --oxido:#c2612f;
+  --oxido-soft:#e08a52;
+  --leve:#8fbf5e;
+  --boa:#e0a33c;
+  --pesada:#c9533f;
+  --r:10px;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--iron-900);color:var(--cal);font-family:var(--sans);
+  font-size:16px;line-height:1.45;
+  padding-bottom:calc(72px + var(--safe-b));
+  overscroll-behavior-y:contain;
+}
+h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.01em}
+button,input,select{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+a{color:var(--oxido-soft)}
+.eyebrow{font-size:10px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--cal-dim)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+header{
+  position:sticky;top:0;z-index:40;background:rgba(20,22,26,.94);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  padding:10px 16px;display:flex;align-items:center;gap:8px;
+}
+.brand{font-size:19px;font-weight:900;letter-spacing:.22em;text-transform:uppercase}
+.brand span{color:var(--oxido)}
+.chip{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 9px;
+  border:1px solid var(--line);border-radius:999px;color:var(--cal-dim);white-space:nowrap}
+.chip.on{border-color:var(--oxido);color:var(--oxido-soft)}
+.grow{flex:1}
+
+main{padding:16px;max-width:640px;margin:0 auto}
+.view{display:none;animation:fade .18s ease}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+.card{background:var(--iron-800);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px;margin-bottom:14px}
+.card.flush{padding:0;overflow:hidden}
+.card h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em}
+.card-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.divider{height:1px;background:var(--line);margin:14px -16px}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  padding:15px 16px;border-radius:var(--r);background:var(--iron-700);
+  border:1px solid var(--line);font-weight:700;font-size:15px}
+.btn:active{transform:scale(.985)}
+.btn.primary{background:var(--oxido);border-color:var(--oxido);color:#fff;
+  font-size:16px;text-transform:uppercase;letter-spacing:.09em}
+.btn.ghost{background:transparent}
+.btn.sm{padding:9px 12px;font-size:13px;width:auto}
+.btn:disabled{opacity:.4}
+.btn-row{display:flex;gap:8px}
+.btn-row .btn{width:auto;flex:1}
+
+nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;
+  background:rgba(20,22,26,.97);backdrop-filter:blur(10px);
+  border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
+nav button{flex:1;padding:9px 2px 11px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--cal-dim);
+  border-top:2px solid transparent}
+nav button.on{color:var(--oxido-soft);border-top-color:var(--oxido)}
+nav svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
+
+/* ASSINATURA: luva da barra com anilhas em vista lateral */
+.sleeve{display:flex;align-items:center;gap:3px;padding:12px 10px;
+  background:linear-gradient(var(--iron-600),var(--iron-600)) left 10px center/100% 10px no-repeat;
+  border-radius:8px;overflow-x:auto;min-height:84px}
+.collar{width:9px;height:16px;background:var(--iron-600);border-radius:2px;flex:none;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}
+.plate{flex:none;width:21px;border-radius:3px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:700;color:#0d0f12;
+  writing-mode:vertical-rl;text-orientation:mixed;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+.plate.p10{height:72px;background:#5f7fa8}
+.plate.p5 {height:58px;background:#b7bcc4}
+.plate.p3 {height:46px;background:#7fa86a}
+.plate.p2 {height:38px;background:#c2874a}
+.sleeve .empty{color:var(--cal-dim);font-size:13px;padding-left:8px}
+
+.load{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.load .big{font-family:var(--mono);font-size:40px;font-weight:700;line-height:.95;
+  font-variant-numeric:tabular-nums}
+.load .big small{font-size:15px;color:var(--cal-dim);margin-left:3px}
+.load .sub{font-size:13px;color:var(--cal-dim);padding-bottom:4px}
+
+.loadgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.loaditem{background:var(--iron-700);border-radius:8px;padding:10px 11px;border-left:2px solid var(--oxido)}
+.loaditem .n{font-size:12px;font-weight:700;line-height:1.25}
+.loaditem .v{font-family:var(--mono);font-size:19px;font-weight:700;margin-top:3px}
+.loaditem .t{font-size:11px;color:var(--cal-dim)}
+
+.serie{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line)}
+.serie:last-child{border-bottom:none}
+.serie .idx{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-family:var(--mono);
+  font-size:12px;font-weight:700;color:var(--cal-dim);flex:none}
+.serie.done .idx{background:var(--oxido);border-color:var(--oxido);color:#fff}
+.serie.now{background:linear-gradient(90deg,rgba(194,97,47,.13),transparent);
+  margin:0 -16px;padding:11px 16px}
+.serie.now .idx{border-color:var(--oxido);color:var(--oxido-soft)}
+.serie .meta{flex:1;font-size:13px}
+.serie .meta b{font-family:var(--mono);font-size:15px}
+.serie .fb{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+  padding:3px 8px;border-radius:999px;border:1px solid}
+.fb.Baixa{color:var(--leve);border-color:var(--leve)}
+.fb.Boa{color:var(--boa);border-color:var(--boa)}
+.fb.Pesada{color:var(--pesada);border-color:var(--pesada)}
+
+.stepper{display:flex;align-items:center;gap:12px;justify-content:center;margin:6px 0 4px}
+.stepper button{width:52px;height:52px;border-radius:12px;background:var(--iron-700);
+  border:1px solid var(--line);font-size:26px;font-weight:700;line-height:1}
+.stepper .val{font-family:var(--mono);font-size:44px;font-weight:700;min-width:74px;
+  text-align:center;font-variant-numeric:tabular-nums}
+
+.fbgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.fbbtn{padding:13px 6px;border-radius:var(--r);border:1px solid var(--line);
+  background:var(--iron-700);text-align:center}
+.fbbtn b{display:block;font-size:14px;font-weight:800;letter-spacing:.03em}
+.fbbtn span{display:block;font-size:10.5px;color:var(--cal-dim);margin-top:2px;line-height:1.3}
+.fbbtn[data-f="Baixa"]{border-color:rgba(143,191,94,.45)}
+.fbbtn[data-f="Boa"]{border-color:rgba(224,163,60,.45)}
+.fbbtn[data-f="Pesada"]{border-color:rgba(201,83,63,.45)}
+.fbbtn[data-f="Baixa"] b{color:var(--leve)}
+.fbbtn[data-f="Boa"] b{color:var(--boa)}
+.fbbtn[data-f="Pesada"] b{color:var(--pesada)}
+
+.alert{display:flex;gap:10px;padding:11px 12px;border-radius:8px;font-size:13px;line-height:1.4;
+  background:rgba(201,83,63,.10);border:1px solid rgba(201,83,63,.4)}
+.alert.info{background:rgba(194,97,47,.09);border-color:rgba(194,97,47,.4)}
+.alert.ok{background:rgba(143,191,94,.09);border-color:rgba(143,191,94,.35)}
+.alert .ic{flex:none;font-size:15px;line-height:1.3}
+
+.check{display:flex;align-items:flex-start;gap:11px;padding:12px 0;
+  border-bottom:1px solid var(--line);cursor:pointer}
+.check:last-child{border-bottom:none}
+.check .box{width:23px;height:23px;border-radius:6px;border:1.5px solid var(--line);
+  flex:none;display:flex;align-items:center;justify-content:center;font-size:14px;
+  color:transparent;margin-top:1px}
+.check.on .box{background:var(--oxido);border-color:var(--oxido);color:#fff}
+.check .txt{font-size:14px;line-height:1.35}
+.check .txt small{display:block;color:var(--cal-dim);font-size:12px;margin-top:2px}
+.check.on .txt{color:var(--cal-dim)}
+
+details{border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+summary{list-style:none;cursor:pointer;font-size:12px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--cal-dim);
+  display:flex;align-items:center;gap:6px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";margin-left:auto;font-size:15px}
+details[open] summary::after{content:"\2212"}
+details ol,details ul{margin:10px 0 0;padding-left:18px;font-size:13.5px;line-height:1.55;color:var(--cal-dim)}
+details li{margin-bottom:5px}
+details li b{color:var(--cal)}
+
+#rest{position:fixed;inset:0;z-index:80;background:rgba(15,17,20,.97);
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px}
+#rest.on{display:flex}
+#rest .clock{font-family:var(--mono);font-size:70px;font-weight:700;line-height:1;
+  font-variant-numeric:tabular-nums}
+#rest .clock.over{color:var(--oxido-soft)}
+#rest .ring{position:relative;width:220px;height:220px;display:grid;place-items:center}
+#rest svg{position:absolute;inset:0;transform:rotate(-90deg)}
+#rest .next{font-size:13px;color:var(--cal-dim);text-align:center;max-width:300px}
+
+.hist{border-bottom:1px solid var(--line)}
+.hist:last-child{border-bottom:none}
+.hist summary{padding:13px 16px;color:var(--cal);text-transform:none;letter-spacing:0;
+  font-size:14px;font-weight:600}
+.hist summary .d{font-family:var(--mono);font-size:12px;color:var(--cal-dim);margin-left:6px}
+.hist .body{padding:0 16px 14px;font-size:13px;color:var(--cal-dim)}
+.hist table{width:100%;border-collapse:collapse;font-size:12.5px}
+.hist td{padding:4px 0;border-bottom:1px solid var(--iron-700)}
+.hist td.r{text-align:right;font-family:var(--mono);color:var(--cal)}
+
+.chartwrap{background:var(--iron-700);border-radius:8px;padding:12px 8px 4px}
+.legend{display:flex;gap:14px;font-size:11px;color:var(--cal-dim);margin-top:8px;justify-content:center}
+.legend i{display:inline-block;width:16px;height:2px;vertical-align:middle;margin-right:5px}
+
+.field{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 0;border-bottom:1px solid var(--line)}
+.field:last-child{border-bottom:none}
+.field label{font-size:14px}
+.field label small{display:block;color:var(--cal-dim);font-size:11.5px}
+.field input,.field select{width:88px;padding:8px 10px;border-radius:8px;background:var(--iron-900);
+  border:1px solid var(--line);text-align:right;font-family:var(--mono);font-weight:700}
+.field select{width:auto;text-align:left;font-family:var(--sans);font-weight:600}
+.field input[type=checkbox]{width:22px;height:22px;accent-color:var(--oxido)}
+
+#toast{position:fixed;left:50%;bottom:calc(84px + var(--safe-b));
+  transform:translateX(-50%) translateY(12px);
+  background:var(--iron-600);border:1px solid var(--line);border-radius:999px;
+  padding:10px 18px;font-size:13px;font-weight:600;z-index:90;opacity:0;
+  transition:.22s;pointer-events:none;max-width:90vw;text-align:center}
+#toast.on{opacity:1;transform:translateX(-50%)}
+
+.muted{color:var(--cal-dim)}
+.center{text-align:center}
+.sp{height:8px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+:focus-visible{outline:2px solid var(--oxido-soft);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">For<span>ja</span></div>
+  <div class="grow"></div>
+  <div class="chip" id="chipCiclo">&mdash;</div>
+  <div class="chip" id="chipClock" style="display:none">00:00</div>
+</header>
+
+<main>
+  <section class="view active" id="v-home"></section>
+  <section class="view" id="v-sessao"></section>
+  <section class="view" id="v-hist"></section>
+  <section class="view" id="v-graf"></section>
+  <section class="view" id="v-ajustes"></section>
+</main>
+
+<nav id="nav">
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Início</button>
+  <button data-v="sessao"><svg viewBox="0 0 24 24"><path d="M6 8v8M18 8v8M3 10v4M21 10v4M6 12h12"/></svg>Treino</button>
+  <button data-v="hist"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Histórico</button>
+  <button data-v="graf"><svg viewBox="0 0 24 24"><path d="M4 19V5M4 19h16"/><path d="M7 15l4-5 3 3 5-7"/></svg>Evolução</button>
+  <button data-v="ajustes"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>Ajustes</button>
+</nav>
+
+<div id="rest">
+  <div class="eyebrow">Descanso</div>
+  <div class="ring">
+    <svg viewBox="0 0 220 220">
+      <circle cx="110" cy="110" r="100" stroke="#2e333e" stroke-width="8" fill="none"/>
+      <circle id="restArc" cx="110" cy="110" r="100" stroke="#c2612f" stroke-width="8" fill="none"
+              stroke-linecap="round" stroke-dasharray="628" stroke-dashoffset="0"/>
+    </svg>
+    <div class="clock" id="restClock">2:45</div>
+  </div>
+  <div class="next" id="restNext"></div>
+  <div class="btn-row" style="width:100%;max-width:340px">
+    <button class="btn ghost" id="restMinus">&minus;30s</button>
+    <button class="btn ghost" id="restPlus">+30s</button>
+  </div>
+  <button class="btn primary" id="restSkip" style="max-width:340px">Pronto, próxima série</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   FORJA — motor de treino
+   Autorregulação, progressão de carga e montagem de anilhas
+   ============================================================ */
+'use strict';
+
+/* ---------- 1. CONSTANTES ---------- */
+const ANILHAS = [10, 5, 3, 2];
+const INV_PADRAO = { 10: 4, 5: 8, 3: 4, 2: 4 };
+const INC = { superior: 2, inferior: 3 };   // kg por lado
+const RPE_FB = { Baixa: 7, Boa: 8.5, Pesada: 10 };
+
+const EX = {
+  agachamento: {
+    nome: 'Agachamento livre', grupo: 'inferior', imp: 'barraLonga',
+    series: 3, reps: 5, descanso: 165, inicial: 10, unilateral: false,
+    tecnica: [
+      '<b>Barra</b> apoiada no trapézio (alta) ou sobre a espinha da escápula (baixa) — nunca no pescoço.',
+      '<b>Pés</b> na largura dos ombros, pontas 15–30° para fora. Joelho segue a linha do pé.',
+      '<b>Descida</b> empurrando o quadril para trás e joelho à frente ao mesmo tempo, tronco firme.',
+      '<b>Profundidade</b>: dobra do quadril abaixo do topo do joelho, sem perder a curva lombar.',
+      '<b>Subida</b> empurrando o chão com o pé inteiro; quadril e ombro sobem juntos.',
+      '<b>Respiração</b>: inspira e trava o abdômen em cima, solta só ao passar o ponto difícil.'
+    ],
+    seguranca: 'Travas do suporte reguladas na altura do ponto mais baixo do seu agachamento. Sem travas, não vá até a falha — pare com 2 repetições na reserva.'
+  },
+  supino: {
+    nome: 'Supino reto', grupo: 'superior', imp: 'barraLonga',
+    series: 3, reps: 5, descanso: 165, inicial: 15, unilateral: false,
+    tecnica: [
+      '<b>Cinco pontos de apoio</b>: dois pés no chão, glúteo, dorsal e cabeça no banco.',
+      '<b>Escápulas</b> retraídas e deprimidas — peito alto, leve arco lombar natural.',
+      '<b>Pegada</b> pouco mais larga que os ombros; punho neutro, barra sobre o antebraço.',
+      '<b>Descida</b> controlada até a linha do mamilo, cotovelos a ~45–60° do tronco.',
+      '<b>Subida</b> em leve diagonal, empurrando o banco com os pés (sem levantar o glúteo).',
+      '<b>Barra parada</b> no peito por 1 s nas séries de aquecimento, para calibrar amplitude.'
+    ],
+    seguranca: 'Sem parceiro: travas de segurança na altura do peito, sempre. Alternativa segura para falhar: repetir com halteres.'
+  },
+  remada: {
+    nome: 'Remada curvada', grupo: 'superior', imp: 'barraLonga',
+    series: 3, reps: 8, descanso: 120, inicial: 10, unilateral: false,
+    tecnica: [
+      '<b>Quadril para trás</b>, tronco entre 30° e 45° do chão, coluna neutra travada.',
+      '<b>Joelho</b> levemente flexionado e fixo — o movimento é só dos braços e escápulas.',
+      '<b>Puxada</b> em direção ao umbigo/parte baixa das costelas, cotovelo rente ao corpo.',
+      '<b>Escápulas</b> se juntam no fim; segure 1 s antes de descer.',
+      '<b>Descida</b> controlada até estender o cotovelo — sem deixar o ombro cair à frente.',
+      '<b>Sem impulso</b> de tronco: se precisar jogar o corpo, a carga está alta.'
+    ],
+    seguranca: 'Lombar é o elo fraco aqui. Ao primeiro arredondamento da coluna, encerre a série.'
+  },
+  terra: {
+    nome: 'Levantamento terra', grupo: 'inferior', imp: 'barraLonga',
+    series: 3, reps: 5, descanso: 180, inicial: 20, unilateral: false,
+    tecnica: [
+      '<b>Barra</b> sobre o meio do pé, quase encostando na canela.',
+      '<b>Pegada</b> na largura dos ombros, braços por fora dos joelhos, braço reto e passivo.',
+      '<b>Posição inicial</b>: peito alto, escápulas sobre a barra, quadril acima do joelho.',
+      '<b>Puxada</b>: empurre o chão com as pernas, barra colada no corpo, quadril e ombro sobem juntos.',
+      '<b>Trava</b> no topo com glúteo — sem hiperextensão da lombar.',
+      '<b>Cada repetição recomeça do chão</b>: reposicione e retome a tensão, sem quicar a anilha.'
+    ],
+    seguranca: 'Não use travas aqui — se a barra ficar pesada demais, apenas devolva ao chão. Não faça falha total no terra.'
+  },
+  militar: {
+    nome: 'Desenvolvimento militar', grupo: 'superior', imp: 'barraLonga',
+    series: 3, reps: 5, descanso: 150, inicial: 5, unilateral: false,
+    tecnica: [
+      '<b>Barra</b> apoiada na clavícula/deltoide anterior, pegada pouco mais larga que os ombros.',
+      '<b>Cotovelo</b> ligeiramente à frente da barra na posição inicial.',
+      '<b>Glúteo e abdômen travados</b> — sem transformar em supino inclinado em pé.',
+      '<b>Subida</b>: tire a cabeça do caminho, empurre e leve a cabeça para frente ao passar a testa.',
+      '<b>Topo</b>: barra alinhada sobre a orelha e o meio do pé, cotovelo estendido.',
+      '<b>Descida</b> controlada até a clavícula, reorganizando a respiração a cada repetição.'
+    ],
+    seguranca: 'Em pé fora do suporte: se falhar, incline o tronco à frente e solte a barra longe dos pés. Nunca faça atrás da nuca.'
+  },
+  afundo: {
+    nome: 'Afundo com halteres', grupo: 'inferior', imp: 'halteres',
+    series: 3, reps: 8, descanso: 105, inicial: 3, unilateral: true,
+    tecnica: [
+      '<b>Halteres</b> ao lado do corpo, ombro encaixado, olhar à frente.',
+      '<b>Passada longa</b>: joelho de trás desce reto em direção ao chão, quase encostando.',
+      '<b>Joelho da frente</b> alinhado ao pé, tíbia quase vertical, peso no calcanhar da frente.',
+      '<b>Tronco</b> ereto (afundo) ou levemente inclinado à frente (mais glúteo).',
+      '<b>Subida</b> empurrando com a perna da frente, sem se jogar para trás.',
+      '<b>Complete todas as repetições de uma perna</b>, depois troque — o descanso é só ao fim das duas.'
+    ],
+    seguranca: 'Espaço livre atrás e ao lado. Se perder o equilíbrio, solte os halteres para fora e para trás dos pés.'
+  }
+};
+
+const TREINOS = {
+  A: { nome: 'Treino A', ex: ['agachamento', 'supino', 'remada'] },
+  B: { nome: 'Treino B', ex: ['terra', 'militar', 'afundo'] }
+};
+
+const AQUECIMENTO = [
+  { t: 'Elevar a frequência cardíaca', s: '3 min de caminhada rápida, polichinelo ou corda' },
+  { t: 'Mobilidade de tornozelo e quadril', s: 'Agachamento profundo apoiado, 60 s balançando devagar' },
+  { t: 'Rotação torácica', s: '8 de cada lado, deitado ou de quatro apoios' },
+  { t: 'Ombro com a barra curta', s: '10 dislocations lentas, pegada larga' },
+  { t: 'Ativação de glúteo e escápula', s: '15 pontes de glúteo + 10 retrações escapulares' },
+  { t: 'Aquecimento no próprio exercício', s: 'As séries com carga baixa aparecem em cada exercício, com pausa de 2 s no ponto de maior alongamento' }
+];
+
+/* ---------- 2. ESTADO ---------- */
+const CFG_PADRAO = {
+  barraLonga: 10, barraCurta: 2, halterVazio: 2,
+  deload: 65, som: true, vibrar: true, autoTimer: true, tempoSerie: 40
+};
+
+const store = (() => {
+  try {
+    localStorage.setItem('__forja_t', '1'); localStorage.removeItem('__forja_t');
+    return localStorage;
+  } catch (e) {
+    const m = {};
+    return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } };
+  }
+})();
+const PERSISTE = (() => { try { return typeof localStorage !== 'undefined' && !!localStorage; } catch (e) { return false; } })();
+
+const CHAVE = 'forja.v2';
+let st, sess = null;
+
+function estadoNovo() {
+  const cargas = {};
+  Object.keys(EX).forEach(k => cargas[k] = EX[k].inicial);
+  return {
+    v: 2, cfg: { ...CFG_PADRAO }, inv: { ...INV_PADRAO },
+    cargas, ciclo: 1, sessoesCiclo: 0, semanaManual: 0,
+    proximo: 'A', snapshotS3: null, hist: []
+  };
+}
+function carregar() {
+  try {
+    const raw = store.getItem(CHAVE);
+    if (!raw) return estadoNovo();
+    const o = JSON.parse(raw);
+    const base = estadoNovo();
+    return { ...base, ...o, cfg: { ...base.cfg, ...(o.cfg || {}) }, inv: { ...base.inv, ...(o.inv || {}) }, cargas: { ...base.cargas, ...(o.cargas || {}) } };
+  } catch (e) { return estadoNovo(); }
+}
+function salvar() { try { store.setItem(CHAVE, JSON.stringify(st)); } catch (e) { toast('Não consegui salvar neste navegador'); } }
+
+/* ---------- 3. MOTOR DE ANILHAS ---------- */
+function pontas(imp) { return imp === 'halteres' ? 4 : 2; }   // halteres = 2 pares de pontas
+
+function montar(alvo, imp, inv) {
+  const e = pontas(imp), cap = {};
+  ANILHAS.forEach(p => cap[p] = Math.floor((inv[p] || 0) / e));
+  let melhor = null;
+  for (let a = 0; a <= cap[10]; a++)
+    for (let b = 0; b <= cap[5]; b++)
+      for (let c = 0; c <= cap[3]; c++)
+        for (let d = 0; d <= cap[2]; d++) {
+          const w = 10 * a + 5 * b + 3 * c + 2 * d, dif = Math.abs(w - alvo), n = a + b + c + d;
+          if (!melhor || dif < melhor.dif || (dif === melhor.dif && (w < melhor.peso || (w === melhor.peso && n < melhor.n)))) {
+            melhor = { peso: w, dif, n, combo: [[10, a], [5, b], [3, c], [2, d]].filter(x => x[1] > 0) };
+          }
+        }
+  return melhor || { peso: 0, dif: alvo, n: 0, combo: [] };
+}
+function snap(alvo, imp) { return montar(Math.max(0, alvo), imp, st.inv).peso; }
+
+function pesoImplemento(lado, imp) {   // peso de cada halter, ou da barra montada
+  if (imp === 'halteres') return st.cfg.halterVazio + 2 * lado;
+  return (imp === 'barraCurta' ? st.cfg.barraCurta : st.cfg.barraLonga) + 2 * lado;
+}
+function pesoTotal(lado, imp) {
+  return imp === 'halteres' ? 2 * pesoImplemento(lado, imp) : pesoImplemento(lado, imp);
+}
+function rotuloCarga(lado, imp) {
+  return imp === 'halteres'
+    ? pesoImplemento(lado, imp).toFixed(0) + ' kg por halter'
+    : pesoTotal(lado, imp).toFixed(0) + ' kg na barra';
+}
+function sleeveHTML(lado, imp) {
+  const m = montar(lado, imp, st.inv);
+  let h = '<div class="sleeve">';
+  if (!m.combo.length) {
+    h += '<span class="collar"></span><span class="empty">Sem anilhas — só ' + (imp === 'halteres' ? 'o halter vazio' : 'a barra') + '</span>';
+  } else {
+    m.combo.forEach(([kg, q]) => { for (let i = 0; i < q; i++) h += '<span class="plate p' + kg + '">' + kg + '</span>'; });
+    h += '<span class="collar"></span>';
+  }
+  return h + '</div>';
+}
+function textoCombo(lado, imp) {
+  const m = montar(lado, imp, st.inv);
+  if (!m.combo.length) return 'sem anilhas';
+  return m.combo.map(([kg, q]) => q + '×' + kg).join(' + ') + ' kg por lado';
+}
+function anilhasUsadas(lado, imp) {
+  const m = montar(lado, imp, st.inv), e = pontas(imp), o = {};
+  m.combo.forEach(([kg, q]) => o[kg] = q * e);
+  return o;
+}
+
+/* ---------- 4. CICLO E PERIODIZAÇÃO ---------- */
+function semana() {
+  if (st.semanaManual) return st.semanaManual;
+  return Math.min(4, Math.floor(st.sessoesCiclo / 4) + 1);
+}
+function ehDeload() { return semana() === 4; }
+function faseTexto() {
+  const s = semana();
+  return s === 1 ? 'Adaptação' : s === 4 ? 'Deload' : 'Progressão linear';
+}
+function cargaPrescrita(id) {
+  const base = st.cargas[id];
+  if (ehDeload()) return snap(base * (st.cfg.deload / 100), EX[id].imp);
+  return snap(base, EX[id].imp);
+}
+function incremento(id) { return INC[EX[id].grupo]; }
+
+/* ---------- 5. AQUECIMENTO DO EXERCÍCIO ---------- */
+function seriesAquecimento(id, lado) {
+  const e = EX[id];
+  const a = [
+    { lado: 0, reps: e.reps + 3, nota: (e.imp === 'halteres' ? 'halteres vazios' : 'barra vazia') + ', pausa de 2 s no ponto de maior alongamento' },
+    { lado: snap(lado * 0.5, e.imp), reps: e.reps, nota: 'metade da carga, amplitude máxima e sem pressa' }
+  ];
+  return a.filter((s, i) => i === 0 || s.lado > 0);
+}
+
+/* ---------- 6. SESSÃO ---------- */
+function novaSessao(tipo) {
+  const t = TREINOS[tipo];
+  sess = {
+    tipo, data: new Date().toISOString(), inicio: Date.now(),
+    semana: semana(), ciclo: st.ciclo, deload: ehDeload(),
+    fase: 'aquecimento', check: AQUECIMENTO.map(() => false), idx: 0,
+    ex: t.ex.map(id => {
+      const lado = cargaPrescrita(id);
+      return {
+        id, ladoInicial: lado, lado, aquec: seriesAquecimento(id, lado),
+        aquecFeito: [false, false], ajuste: null,
+        series: Array.from({ length: EX[id].series }, (_, i) => ({
+          n: i + 1, lado, reps: null, fb: null, rpe: null, descanso: null, feita: false
+        })),
+        s: 0, fim: false
+      };
+    })
+  };
+  salvarSessao();
+}
+function salvarSessao() { try { store.setItem('forja.sess', JSON.stringify(sess)); } catch (e) { } }
+function limparSessao() { sess = null; try { store.removeItem('forja.sess'); } catch (e) { } }
+function retomarSessao() {
+  try { const r = store.getItem('forja.sess'); if (r) sess = JSON.parse(r); } catch (e) { }
+}
+
+/* aplica autorregulação a partir da 1ª série */
+function aplicarFeedback(exS, serie, fb) {
+  const id = exS.id, inc = incremento(id), e = EX[id];
+  serie.fb = fb;
+  serie.rpe = RPE_FB[fb];
+  if (serie.n !== 1) { salvarSessao(); return null; }
+
+  const de = exS.lado;
+  let novo = exS.lado, msg = null;
+  if (fb === 'Baixa') {
+    novo = snap(exS.lado + inc, e.imp);
+    msg = novo > exS.lado
+      ? 'Carga sobe para ' + novo + ' kg/lado nas próximas séries'
+      : 'O estoque de anilhas não permite subir mais — mantendo ' + exS.lado + ' kg/lado';
+  } else if (fb === 'Pesada') {
+    novo = snap(Math.max(0, exS.lado - inc), e.imp);
+    msg = novo < exS.lado
+      ? 'Carga cai para ' + novo + ' kg/lado nas próximas séries'
+      : 'Já está na carga mínima montável';
+  }
+  if (novo !== exS.lado) {
+    exS.lado = novo;
+    exS.series.forEach(s => { if (!s.feita) s.lado = novo; });
+    exS.ajuste = { fb, de: de, para: novo };
+  } else if (fb === 'Boa') {
+    exS.ajuste = { fb, de: de, para: de };
+  }
+  salvarSessao();
+  return msg;
+}
+
+/* carga a gravar para a próxima sessão */
+function proximaCarga(exS) {
+  const id = exS.id, e = EX[id], inc = incremento(id);
+  const base = st.cargas[id];
+  if (sess.deload) return { valor: base, motivo: 'Semana de deload não altera a carga de trabalho' };
+
+  const fb1 = exS.series[0].fb;
+  const todas = exS.series.every(s => s.feita && s.reps >= EX[id].reps);
+  const algumaPesada = exS.series.some(s => s.fb === 'Pesada');
+
+  if (fb1 === 'Baixa') return { valor: exS.lado, motivo: 'Primeira série leve — carga já subiu na sessão' };
+  if (fb1 === 'Pesada') return { valor: exS.lado, motivo: 'Primeira série no limite — carga reduzida' };
+  if (fb1 === 'Boa' && todas && !algumaPesada) {
+    const v = snap(exS.lado + inc, e.imp);
+    return { valor: v, motivo: v > exS.lado ? 'Três séries completas com técnica boa — sobe ' + inc + ' kg/lado' : 'Estoque de anilhas no limite — mantém' };
+  }
+  if (fb1 === 'Boa' && algumaPesada) return { valor: exS.lado, motivo: 'Última série no limite — repete a carga' };
+  return { valor: exS.lado, motivo: 'Repetições abaixo do alvo — repete a carga' };
+}
+
+function encerrarSessao(aceites) {
+  const reg = {
+    id: 'S' + Date.now(), data: sess.data, tipo: sess.tipo, ciclo: sess.ciclo,
+    semana: sess.semana, deload: sess.deload,
+    duracao: Math.round((Date.now() - sess.inicio) / 1000),
+    ex: sess.ex.map(x => ({
+      id: x.id, ladoInicial: x.ladoInicial, ladoFinal: x.lado,
+      imp: EX[x.id].imp,
+      series: x.series.filter(s => s.feita).map(s => ({
+        n: s.n, lado: s.lado, total: pesoTotal(s.lado, EX[x.id].imp),
+        implemento: pesoImplemento(s.lado, EX[x.id].imp),
+        reps: s.reps, fb: s.fb, rpe: s.rpe, descanso: s.descanso
+      }))
+    }))
+  };
+  reg.tonelagem = reg.ex.reduce((t, x) => t + x.series.reduce((a, s) =>
+    a + s.total * s.reps * (EX[x.id].unilateral ? 2 : 1), 0), 0);
+
+  st.hist.unshift(reg);
+  sess.ex.forEach((x, i) => { if (aceites[i] != null) st.cargas[x.id] = aceites[i]; });
+
+  st.sessoesCiclo++;
+  if (st.sessoesCiclo === 12) st.snapshotS3 = { ...st.cargas };
+  if (st.sessoesCiclo >= 16) {
+    st.ciclo++; st.sessoesCiclo = 0; st.semanaManual = 0;
+    if (st.snapshotS3) st.cargas = { ...st.snapshotS3 };
+    st.snapshotS3 = null;
+  }
+  st.proximo = sess.tipo === 'A' ? 'B' : 'A';
+  salvar(); limparSessao();
+  return reg;
+}
+
+/* ---------- 7. MÉTRICAS ---------- */
+function epley(peso, reps) { return reps > 0 ? peso * (1 + reps / 30) : 0; }
+function melhor1RM(id) {
+  let m = 0, quando = null;
+  st.hist.forEach(h => h.ex.filter(x => x.id === id).forEach(x => x.series.forEach(s => {
+    const e = epley(EX[id].imp === 'halteres' ? s.total : s.total, s.reps);
+    if (e > m) { m = e; quando = h.data; }
+  })));
+  return { valor: m, data: quando };
+}
+function serieHistorica(id) {
+  const pts = [];
+  [...st.hist].reverse().forEach(h => {
+    const x = h.ex.find(y => y.id === id);
+    if (!x || !x.series.length) return;
+    const melhor = x.series.reduce((a, s) => epley(s.total, s.reps) > epley(a.total, a.reps) ? s : a, x.series[0]);
+    pts.push({ data: h.data, carga: melhor.total, lado: melhor.lado, rm: epley(melhor.total, melhor.reps), deload: h.deload });
+  });
+  return pts;
+}
+
+/* ---------- 8. UTILIDADES DE UI ---------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+function toast(m) {
+  const t = $('#toast'); t.textContent = m; t.classList.add('on');
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2600);
+}
+function mmss(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function dataBR(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+function diaSemana(iso) {
+  return new Date(iso).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function repsLabel(id) { return EX[id].reps + (EX[id].unilateral ? ' por perna' : ''); }
+
+/* ---------- 9. TIMER DE DESCANSO ---------- */
+const T = { fim: 0, dur: 0, on: false, raf: 0, cb: null, inicio: 0 };
+let ac = null;
+function beep(freq, dur) {
+  if (!st.cfg.som) return;
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.connect(g); g.connect(ac.destination);
+    o.frequency.value = freq; o.type = 'sine';
+    g.gain.setValueAtTime(.001, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(.25, ac.currentTime + .02);
+    g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + dur);
+    o.start(); o.stop(ac.currentTime + dur + .02);
+  } catch (e) { }
+}
+function vibrar(p) { if (st.cfg.vibrar && navigator.vibrate) try { navigator.vibrate(p); } catch (e) { } }
+
+function descansar(seg, texto, cb) {
+  if (!st.cfg.autoTimer) { cb && cb(seg); return; }
+  T.dur = seg; T.inicio = Date.now(); T.fim = Date.now() + seg * 1000; T.on = true; T.cb = cb; T._avisou = {};
+  $('#restNext').innerHTML = texto || '';
+  $('#rest').classList.add('on');
+  tickTimer();
+}
+function tickTimer() {
+  if (!T.on) return;
+  const rest = (T.fim - Date.now()) / 1000;
+  const c = $('#restClock');
+  c.textContent = (rest < 0 ? '+' : '') + mmss(Math.abs(rest));
+  c.classList.toggle('over', rest < 0);
+  const frac = Math.min(1, Math.max(0, rest / T.dur));
+  $('#restArc').setAttribute('stroke-dashoffset', String(628 * (1 - frac)));
+  [3, 2, 1].forEach(n => {
+    if (rest <= n && rest > n - 1 && !T._avisou[n]) { T._avisou[n] = 1; beep(660, .08); }
+  });
+  if (rest <= 0 && !T._avisou.fim) { T._avisou.fim = 1; beep(880, .35); vibrar([120, 60, 120]); }
+  T.raf = requestAnimationFrame(tickTimer);
+}
+function fecharTimer() {
+  if (!T.on) return;
+  T.on = false; cancelAnimationFrame(T.raf);
+  $('#rest').classList.remove('on');
+  const usado = Math.round((Date.now() - T.inicio) / 1000);
+  const cb = T.cb; T.cb = null;
+  cb && cb(usado);
+}
+$('#restSkip').onclick = fecharTimer;
+$('#restPlus').onclick = () => { T.fim += 30000; T.dur += 30; T._avisou = {}; };
+$('#restMinus').onclick = () => { T.fim -= 30000; };
+
+/* relógio da sessão */
+setInterval(() => {
+  const chip = $('#chipClock');
+  if (sess && sess.inicio) {
+    chip.style.display = '';
+    const s = Math.round((Date.now() - sess.inicio) / 1000);
+    chip.textContent = mmss(s);
+    chip.classList.toggle('on', s < 3600);
+  } else chip.style.display = 'none';
+}, 1000);
+
+/* ---------- 10. NAVEGAÇÃO ---------- */
+let viewAtual = 'home';
+function ir(v) {
+  viewAtual = v;
+  $$('.view').forEach(e => e.classList.remove('active'));
+  $('#v-' + v).classList.add('active');
+  $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  render();
+  window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+}
+$('#nav').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) ir(b.dataset.v);
+});
+
+/* ---------- 11. RENDER ---------- */
+function render() {
+  $('#chipCiclo').textContent = 'Ciclo ' + st.ciclo + ' · Sem ' + semana() + ' · ' + faseTexto();
+  $('#chipCiclo').classList.toggle('on', ehDeload());
+  ({ home: renderHome, sessao: renderSessao, hist: renderHist, graf: renderGraf, ajustes: renderAjustes })[viewAtual]();
+}
+
+function renderHome() {
+  const prox = st.proximo, t = TREINOS[prox];
+  const total = st.hist.length;
+  const ultima = st.hist[0];
+  let h = '';
+
+  if (sess) {
+    h += `<div class="card"><div class="eyebrow">Em andamento</div>
+      <div class="card-hd"><h2>${TREINOS[sess.tipo].nome}</h2></div>
+      <p class="muted" style="margin:0 0 12px;font-size:14px">Você começou este treino há ${mmss((Date.now() - sess.inicio) / 1000)}.</p>
+      <button class="btn primary" data-act="ir-sessao">Continuar treino</button></div>`;
+  } else {
+    h += `<div class="card">
+      <div class="eyebrow">Próximo treino</div>
+      <div class="card-hd" style="margin-bottom:6px"><h2 style="font-size:22px">${t.nome}</h2></div>
+      <p class="muted" style="margin:0 0 14px;font-size:13.5px">${t.ex.map(id => EX[id].nome).join(' · ')}</p>
+      <button class="btn primary" data-act="iniciar" data-t="${prox}">Iniciar ${t.nome}</button>
+      <div class="sp"></div>
+      <button class="btn ghost sm" style="width:100%" data-act="iniciar" data-t="${prox === 'A' ? 'B' : 'A'}">Fazer o ${prox === 'A' ? 'Treino B' : 'Treino A'} hoje</button>
+    </div>`;
+  }
+
+  if (ehDeload()) {
+    h += `<div class="card"><div class="alert info"><span class="ic">↓</span><div>
+      <b>Semana de deload.</b> As cargas caem para ${st.cfg.deload}% e a carga de trabalho gravada não muda.
+      Ao terminar a semana 4, o ciclo reinicia com as cargas da semana 3.</div></div></div>`;
+  }
+
+  h += `<div class="card"><div class="card-hd"><h2>Cargas de trabalho</h2>
+    <span class="eyebrow grow" style="text-align:right">${ehDeload() ? 'deload ' + st.cfg.deload + '%' : 'por lado'}</span></div>
+    <div class="loadgrid">` +
+    Object.keys(EX).map(id => {
+      const lado = cargaPrescrita(id), e = EX[id];
+      return `<div class="loaditem"><div class="n">${e.nome}</div>
+        <div class="v">${lado}<span style="font-size:12px"> kg/lado</span></div>
+        <div class="t">${rotuloCarga(lado, e.imp)} · ${e.series}×${repsLabel(id)}</div></div>`;
+    }).join('') + `</div></div>`;
+
+  h += `<div class="card"><div class="card-hd"><h2>Ciclo</h2></div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">` +
+    [1, 2, 3, 4].map(w => {
+      const feita = Math.min(4, Math.max(0, st.sessoesCiclo - (w - 1) * 4));
+      const at = semana() === w;
+      return `<div style="flex:1;text-align:center">
+        <div style="height:6px;border-radius:3px;background:${w === 4 ? 'var(--iron-600)' : 'var(--iron-700)'};overflow:hidden">
+          <div style="height:100%;width:${feita / 4 * 100}%;background:${w === 4 ? 'var(--boa)' : 'var(--oxido)'}"></div></div>
+        <div class="eyebrow" style="margin-top:5px;color:${at ? 'var(--oxido-soft)' : 'var(--cal-dim)'}">S${w}</div></div>`;
+    }).join('') + `</div>
+    <p class="muted" style="margin:0;font-size:13px">${st.sessoesCiclo} de 16 sessões · ${faseTexto()} · ${total} treino${total === 1 ? '' : 's'} registrado${total === 1 ? '' : 's'} no total</p></div>`;
+
+  if (ultima) {
+    h += `<div class="card"><div class="card-hd"><h2>Último treino</h2>
+      <span class="eyebrow grow" style="text-align:right">${dataBR(ultima.data)}</span></div>
+      <p class="muted" style="margin:0;font-size:13.5px">${TREINOS[ultima.tipo].nome} · ${mmss(ultima.duracao)} · ${(ultima.tonelagem / 1000).toFixed(1)} t de volume</p></div>`;
+  }
+
+  h += `<div class="card"><div class="card-hd"><h2>Antes de carregar a barra</h2></div>
+    <div class="alert"><span class="ic">!</span><div>Agachamento e supino: <b>regule as travas do suporte</b> na altura do ponto mais baixo do movimento. Sem travas, pare a série com 2 repetições na reserva.</div></div>
+    <div class="sp"></div>
+    <div class="alert info"><span class="ic">!</span><div>Terra e desenvolvimento em pé não têm trava. Falhou? Devolva a barra ao chão à frente dos pés.</div></div></div>`;
+
+  if (!PERSISTE) {
+    h += `<div class="card"><div class="alert"><span class="ic">!</span><div>Este navegador está bloqueando o armazenamento local. O treino funciona, mas <b>nada será salvo ao fechar</b>. Instale o app ou abra em uma aba normal.</div></div></div>`;
+  }
+  $('#v-home').innerHTML = h;
+}
+
+/* ---------- SESSÃO ---------- */
+function renderSessao() {
+  const el = $('#v-sessao');
+  if (!sess) {
+    el.innerHTML = `<div class="card center"><div class="eyebrow">Nenhum treino em andamento</div>
+      <p class="muted" style="font-size:14px">Escolha o treino de hoje.</p>
+      <div class="btn-row"><button class="btn" data-act="iniciar" data-t="A">Treino A</button>
+      <button class="btn" data-act="iniciar" data-t="B">Treino B</button></div></div>`;
+    return;
+  }
+  if (sess.fase === 'aquecimento') return renderAquecimento();
+  if (sess.fase === 'resumo') return renderResumo();
+  renderExercicio();
+}
+
+function renderAquecimento() {
+  const t = TREINOS[sess.tipo];
+  const pronto = sess.check.filter(Boolean).length;
+  $('#v-sessao').innerHTML = `
+  <div class="card"><div class="eyebrow">${t.nome} · Semana ${sess.semana}${sess.deload ? ' · deload' : ''}</div>
+    <div class="card-hd" style="margin-bottom:4px"><h2 style="font-size:20px">Aquecimento</h2></div>
+    <p class="muted" style="font-size:13.5px;margin:0 0 4px">Carga baixa e alongamento máximo. Leve cada articulação até o fim da amplitude antes de pensar em peso.</p>
+    <div class="divider"></div>
+    ${AQUECIMENTO.map((a, i) => `<div class="check ${sess.check[i] ? 'on' : ''}" data-act="check" data-i="${i}">
+      <div class="box">&#10003;</div><div class="txt">${a.t}<small>${a.s}</small></div></div>`).join('')}
+  </div>
+  <button class="btn primary" data-act="fase-ex">${pronto < AQUECIMENTO.length ? 'Pular para os exercícios' : 'Começar os exercícios'}</button>
+  <div class="sp"></div>
+  <button class="btn ghost sm" style="width:100%" data-act="cancelar">Cancelar treino</button>`;
+}
+
+function renderExercicio() {
+  const x = sess.ex[sess.idx], e = EX[x.id];
+  const serie = x.series[x.s];
+  const feitas = x.series.filter(s => s.feita).length;
+  const alvoReps = e.reps;
+  if (sess.reps == null) sess.reps = alvoReps;
+
+  const aquecHTML = feitas === 0 ? `
+    <div class="eyebrow" style="margin-bottom:2px">Aquecimento no exercício</div>
+    ${x.aquec.map((a, i) => `<div class="check ${x.aquecFeito[i] ? 'on' : ''}" data-act="aq" data-i="${i}" style="padding:9px 0">
+      <div class="box">&#10003;</div><div class="txt" style="font-size:13.5px">
+      ${a.lado === 0 ? (e.imp === 'halteres' ? 'Halteres vazios' : 'Barra vazia') : a.lado + ' kg por lado'} × ${a.reps}${e.unilateral ? ' por perna' : ''}
+      <small>${a.nota}</small></div></div>`).join('')}
+    <div class="divider"></div>` : '';
+
+  const seriesHTML = x.series.map((s, i) => {
+    const cls = s.feita ? 'done' : (i === x.s ? 'now' : '');
+    return `<div class="serie ${cls}"><div class="idx">${s.n}</div>
+      <div class="meta"><b>${s.lado}</b> kg/lado · ${rotuloCarga(s.lado, e.imp)}
+      ${s.feita ? `<br><span class="muted">${s.reps}${e.unilateral ? '/perna' : ''} reps · RPE ${s.rpe ?? '—'}${s.descanso ? ' · descanso ' + mmss(s.descanso) : ''}</span>` : ''}</div>
+      ${s.fb ? `<span class="fb ${s.fb}">${s.fb}</span>` : ''}</div>`;
+  }).join('');
+
+  const entrada = x.fim ? '' : `
+    <div class="divider"></div>
+    <div class="eyebrow center">Série ${serie.n} — repetições feitas${e.unilateral ? ' por perna' : ''}</div>
+    <div class="stepper">
+      <button data-act="reps" data-d="-1">−</button>
+      <div class="val">${sess.reps}</div>
+      <button data-act="reps" data-d="1">+</button>
+    </div>
+    <p class="center muted" style="font-size:12px;margin:0 0 14px">alvo: ${alvoReps}${e.unilateral ? ' por perna' : ''}</p>
+    ${serie.n === 1 ? `
+      <div class="eyebrow center" style="margin-bottom:8px">Como foi a série?</div>
+      <div class="fbgrid">
+        <button class="fbbtn" data-act="fb" data-f="Baixa"><b>Baixa</b><span>sobraram 3+ reps</span></button>
+        <button class="fbbtn" data-act="fb" data-f="Boa"><b>Boa</b><span>sobraram 1–2 reps</span></button>
+        <button class="fbbtn" data-act="fb" data-f="Pesada"><b>Pesada</b><span>falha ou 0 reps</span></button>
+      </div>
+      <p class="center muted" style="font-size:11.5px;margin:10px 0 0">A resposta ajusta a carga das próximas séries e a da próxima sessão.</p>`
+      : `<button class="btn primary" data-act="registrar">Registrar série ${serie.n}</button>
+      <div class="sp"></div>
+      <div class="fbgrid">
+        <button class="fbbtn" data-act="registrar" data-f="Baixa"><b>Baixa</b><span>e registrar</span></button>
+        <button class="fbbtn" data-act="registrar" data-f="Boa"><b>Boa</b><span>e registrar</span></button>
+        <button class="fbbtn" data-act="registrar" data-f="Pesada"><b>Pesada</b><span>e registrar</span></button>
+      </div>`}`;
+
+  const ajusteHTML = x.ajuste && x.ajuste.para !== x.ajuste.de ? `
+    <div class="alert ${x.ajuste.fb === 'Pesada' ? '' : 'ok'}" style="margin-bottom:12px">
+      <span class="ic">${x.ajuste.fb === 'Pesada' ? '↓' : '↑'}</span>
+      <div>Carga ajustada de <b>${x.ajuste.de}</b> para <b>${x.ajuste.para} kg/lado</b>. Troque as anilhas antes da próxima série.</div></div>` : '';
+
+  $('#v-sessao').innerHTML = `
+  <div class="card">
+    <div class="eyebrow">${TREINOS[sess.tipo].nome} · exercício ${sess.idx + 1} de ${sess.ex.length}${sess.deload ? ' · deload' : ''}</div>
+    <div class="card-hd" style="margin:2px 0 10px"><h2 style="font-size:21px">${e.nome}</h2></div>
+    <div class="load">
+      <div class="big">${x.lado}<small>kg/lado</small></div>
+      <div class="sub">${rotuloCarga(x.lado, e.imp)}<br>${e.series} × ${repsLabel(x.id)} · descanso ${mmss(e.descanso)}</div>
+    </div>
+    ${sleeveHTML(x.lado, e.imp)}
+    <p class="muted center" style="font-size:12px;margin:6px 0 0">${textoCombo(x.lado, e.imp)}${e.imp === 'halteres' ? ' · em cada ponta dos dois halteres' : ''}</p>
+    <div style="display:flex;gap:8px;margin-top:10px;justify-content:center">
+      <button class="btn sm ghost" data-act="carga" data-d="-1">− carga</button>
+      <button class="btn sm ghost" data-act="carga" data-d="1">+ carga</button>
+    </div>
+    <div class="divider"></div>
+    ${ajusteHTML}
+    <div class="alert info" style="margin-bottom:12px"><span class="ic">!</span><div>${e.seguranca}</div></div>
+    ${aquecHTML}
+    ${seriesHTML}
+    ${entrada}
+    ${x.fim ? `<div class="divider"></div><button class="btn primary" data-act="proximo">${sess.idx + 1 < sess.ex.length ? 'Próximo exercício' : 'Encerrar e revisar'}</button>` : ''}
+    <details><summary>Técnica</summary><ol>${e.tecnica.map(t => '<li>' + t + '</li>').join('')}</ol>
+      <p style="margin-top:10px"><a href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nome + ' técnica execução')}" target="_blank" rel="noopener">Ver demonstrações em vídeo &rarr;</a></p>
+    </details>
+  </div>
+  <button class="btn ghost sm" style="width:100%" data-act="cancelar">Cancelar treino</button>`;
+}
+
+function renderResumo() {
+  const sugest = sess.ex.map(x => proximaCarga(x));
+  sess.aceite = sess.aceite || sugest.map(s => s.valor);
+  const dur = Math.round((Date.now() - sess.inicio) / 1000);
+  $('#v-sessao').innerHTML = `
+  <div class="card">
+    <div class="eyebrow">${TREINOS[sess.tipo].nome} concluído</div>
+    <div class="card-hd" style="margin:2px 0 10px"><h2 style="font-size:20px">${mmss(dur)} de treino</h2></div>
+    ${dur > 3600 ? '<div class="alert info"><span class="ic">!</span><div>Passou de 1 hora. Corte conversa entre séries ou reduza 15 s de descanso nos acessórios.</div></div><div class="sp"></div>' : ''}
+    ${sess.ex.map((x, i) => {
+    const e = EX[x.id], s = sugest[i], feitas = x.series.filter(f => f.feita);
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--line)">
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <b style="font-size:14.5px">${e.nome}</b>
+          <span class="muted grow" style="text-align:right;font-size:12.5px">${feitas.map(f => f.reps).join(' · ')} reps</span></div>
+        <div class="muted" style="font-size:12.5px;margin-top:3px">
+          ${x.ladoInicial} &rarr; ${x.lado} kg/lado · 1RM estimado ${feitas.length ? Math.round(Math.max(...feitas.map(f => epley(pesoTotal(f.lado, e.imp), f.reps)))) + ' kg' : '—'}</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+          <div style="flex:1;font-size:12.5px">Próxima sessão: <b class="num">${sess.aceite[i]} kg/lado</b><br><span class="muted" style="font-size:11.5px">${s.motivo}</span></div>
+          <button class="btn sm ghost" data-act="sug" data-i="${i}" data-d="-1">−</button>
+          <button class="btn sm ghost" data-act="sug" data-i="${i}" data-d="1">+</button>
+        </div></div>`;
+  }).join('')}
+    <div class="sp"></div>
+    <button class="btn primary" data-act="salvar-sessao">Salvar treino</button>
+  </div>`;
+}
+
+/* ---------- HISTÓRICO ---------- */
+function renderHist() {
+  const el = $('#v-hist');
+  if (!st.hist.length) {
+    el.innerHTML = `<div class="card center"><div class="eyebrow">Histórico vazio</div>
+      <p class="muted" style="font-size:14px;margin-bottom:0">Cada treino salvo aparece aqui com carga, repetições, feedback, RPE e descanso.</p></div>`;
+    return;
+  }
+  const tot = st.hist.reduce((a, h) => a + h.tonelagem, 0);
+  el.innerHTML = `<div class="card"><div class="card-hd"><h2>Resumo</h2></div>
+      <p class="muted" style="margin:0;font-size:13.5px">${st.hist.length} treinos · ${(tot / 1000).toFixed(1)} toneladas movidas · média de ${mmss(st.hist.reduce((a, h) => a + h.duracao, 0) / st.hist.length)} por sessão</p></div>
+    <div class="card flush">` +
+    st.hist.map(h => `<details class="hist"><summary>${TREINOS[h.tipo].nome}
+      <span class="d">${diaSemana(h.data)} ${dataBR(h.data)} · C${h.ciclo}S${h.semana}${h.deload ? ' deload' : ''}</span></summary>
+      <div class="body"><table>${h.ex.map(x => `<tr><td colspan="2" style="padding-top:9px"><b style="color:var(--cal)">${EX[x.id].nome}</b></td></tr>` +
+      x.series.map(s => `<tr><td>Série ${s.n} · ${s.reps} reps${s.fb ? ' · ' + s.fb : ''}${s.rpe ? ' · RPE ' + s.rpe : ''}</td>
+          <td class="r">${s.lado} kg/lado<br><span class="muted" style="font-size:11px">${s.total} kg total</span></td></tr>`).join('')).join('')}
+      </table>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <span class="muted grow" style="font-size:12px">${mmss(h.duracao)} · ${(h.tonelagem / 1000).toFixed(2)} t</span>
+        <button class="btn sm ghost" data-act="del" data-id="${h.id}">Excluir</button></div>
+      </div></details>`).join('') + `</div>
+    <div class="btn-row"><button class="btn" data-act="csv">Exportar CSV</button>
+      <button class="btn" data-act="json">Exportar JSON</button></div>`;
+}
+
+/* ---------- EVOLUÇÃO ---------- */
+function renderGraf() {
+  const ids = Object.keys(EX);
+  const sel = st.grafEx || ids[0];
+  const pts = serieHistorica(sel);
+  const rec = melhor1RM(sel);
+  $('#v-graf').innerHTML = `
+    <div class="card"><div class="card-hd"><h2>Evolução</h2></div>
+      <div class="field" style="border:none;padding-top:0">
+        <label>Exercício</label>
+        <select data-act="graf-ex">${ids.map(i => `<option value="${i}" ${i === sel ? 'selected' : ''}>${EX[i].nome}</option>`).join('')}</select>
+      </div>
+      ${pts.length < 2 ? `<p class="muted center" style="font-size:13.5px;padding:24px 0">Faça ao menos dois treinos com ${EX[sel].nome} para ver a curva.</p>`
+      : `<div class="chartwrap">${grafico(pts)}</div>
+         <div class="legend"><span><i style="background:var(--oxido)"></i>Carga total</span><span><i style="background:var(--cal-dim)"></i>1RM estimado (Epley)</span></div>`}
+      <div class="divider"></div>
+      <div class="loadgrid">
+        <div class="loaditem"><div class="n">Melhor 1RM estimado</div><div class="v">${rec.valor ? Math.round(rec.valor) : '—'}<span style="font-size:12px"> kg</span></div><div class="t">${rec.data ? dataBR(rec.data) : 'sem registro'}</div></div>
+        <div class="loaditem"><div class="n">Carga atual</div><div class="v">${st.cargas[sel]}<span style="font-size:12px"> kg/lado</span></div><div class="t">${rotuloCarga(st.cargas[sel], EX[sel].imp)}</div></div>
+        <div class="loaditem"><div class="n">Sessões</div><div class="v">${pts.length}</div><div class="t">com este exercício</div></div>
+        <div class="loaditem"><div class="n">Ganho no período</div><div class="v">${pts.length > 1 ? (pts[pts.length - 1].carga - pts[0].carga >= 0 ? '+' : '') + (pts[pts.length - 1].carga - pts[0].carga) : '—'}<span style="font-size:12px"> kg</span></div><div class="t">carga total na barra</div></div>
+      </div>
+    </div>
+    <div class="card"><div class="card-hd"><h2>Todos os exercícios</h2></div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+      ${ids.map(i => { const r = melhor1RM(i); return `<tr><td style="padding:7px 0;border-bottom:1px solid var(--line)">${EX[i].nome}</td>
+        <td class="num" style="text-align:right;padding:7px 0;border-bottom:1px solid var(--line)">${st.cargas[i]} kg/lado</td>
+        <td class="num muted" style="text-align:right;padding:7px 0 7px 12px;border-bottom:1px solid var(--line)">${r.valor ? Math.round(r.valor) + ' kg 1RM' : '—'}</td></tr>`; }).join('')}
+      </table></div>`;
+}
+
+function grafico(pts) {
+  const W = 320, H = 170, P = { t: 12, r: 10, b: 22, l: 32 };
+  const xs = i => P.l + i * (W - P.l - P.r) / Math.max(1, pts.length - 1);
+  const vals = pts.flatMap(p => [p.carga, p.rm]);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  const pad = Math.max(2, (max - min) * .15); min = Math.max(0, min - pad); max = max + pad;
+  const ys = v => P.t + (1 - (v - min) / (max - min || 1)) * (H - P.t - P.b);
+  const linha = k => pts.map((p, i) => (i ? 'L' : 'M') + xs(i).toFixed(1) + ' ' + ys(p[k]).toFixed(1)).join(' ');
+  const ticks = [min, (min + max) / 2, max];
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    ${ticks.map(v => `<line x1="${P.l}" y1="${ys(v)}" x2="${W - P.r}" y2="${ys(v)}" stroke="#343a46" stroke-width="1"/>
+      <text x="4" y="${ys(v) + 4}" fill="#98a1ad" font-size="9" font-family="monospace">${Math.round(v)}</text>`).join('')}
+    <path d="${linha('rm')}" fill="none" stroke="#98a1ad" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <path d="${linha('carga')}" fill="none" stroke="#c2612f" stroke-width="2.5" stroke-linejoin="round"/>
+    ${pts.map((p, i) => `<circle cx="${xs(i)}" cy="${ys(p.carga)}" r="${p.deload ? 4 : 3}" fill="${p.deload ? '#e0a33c' : '#c2612f'}"/>`).join('')}
+    <text x="${P.l}" y="${H - 6}" fill="#98a1ad" font-size="9" font-family="monospace">${dataBR(pts[0].data)}</text>
+    <text x="${W - P.r}" y="${H - 6}" fill="#98a1ad" font-size="9" font-family="monospace" text-anchor="end">${dataBR(pts[pts.length - 1].data)}</text>
+  </svg>`;
+}
+
+/* ---------- AJUSTES ---------- */
+function renderAjustes() {
+  $('#v-ajustes').innerHTML = `
+  <div class="card"><div class="card-hd"><h2>Barras e halteres</h2></div>
+    <div class="field"><label>Barra longa 1,80 m<small>usada em todos os exercícios de barra</small></label>
+      <input type="number" step="0.5" value="${st.cfg.barraLonga}" data-cfg="barraLonga"></div>
+    <div class="field"><label>Barra curta 1,20 m<small>aquecimento de ombro</small></label>
+      <input type="number" step="0.5" value="${st.cfg.barraCurta}" data-cfg="barraCurta"></div>
+    <div class="field"><label>Halter vazio (cada)<small>peso da barra do halter montável</small></label>
+      <input type="number" step="0.5" value="${st.cfg.halterVazio}" data-cfg="halterVazio"></div>
+  </div>
+
+  <div class="card"><div class="card-hd"><h2>Estoque de anilhas</h2></div>
+    ${ANILHAS.map(p => `<div class="field"><label>Anilhas de ${p} kg<small>${Math.floor(st.inv[p] / 2)} por lado na barra · ${Math.floor(st.inv[p] / 4)} por ponta nos halteres</small></label>
+      <input type="number" min="0" step="1" value="${st.inv[p]}" data-inv="${p}"></div>`).join('')}
+    <p class="muted" style="font-size:12.5px;margin:12px 0 0">Total disponível: <b class="num">${ANILHAS.reduce((a, p) => a + p * st.inv[p], 0)} kg</b> em anilhas. O app só sugere combinações que cabem neste estoque.</p>
+  </div>
+
+  <div class="card"><div class="card-hd"><h2>Cargas de trabalho</h2></div>
+    ${Object.keys(EX).map(id => `<div class="field"><label>${EX[id].nome}<small>${rotuloCarga(st.cargas[id], EX[id].imp)} · passo de ${incremento(id)} kg</small></label>
+      <input type="number" min="0" step="1" value="${st.cargas[id]}" data-carga="${id}"></div>`).join('')}
+    <p class="muted" style="font-size:12.5px;margin:12px 0 0">Valores em kg por lado. Ao salvar, o app arredonda para a combinação de anilhas mais próxima.</p>
+  </div>
+
+  <div class="card"><div class="card-hd"><h2>Ciclo</h2></div>
+    <div class="field"><label>Semana atual<small>automático a cada 4 sessões</small></label>
+      <select data-cfg-sel="semanaManual">
+        <option value="0" ${!st.semanaManual ? 'selected' : ''}>Automático (${semana()})</option>
+        ${[1, 2, 3, 4].map(w => `<option value="${w}" ${st.semanaManual === w ? 'selected' : ''}>Semana ${w}</option>`).join('')}
+      </select></div>
+    <div class="field"><label>Deload<small>percentual da carga na semana 4</small></label>
+      <input type="number" min="40" max="90" step="5" value="${st.cfg.deload}" data-cfg="deload"></div>
+    <div class="field"><label>Próximo treino</label>
+      <select data-cfg-sel="proximo"><option value="A" ${st.proximo === 'A' ? 'selected' : ''}>Treino A</option>
+      <option value="B" ${st.proximo === 'B' ? 'selected' : ''}>Treino B</option></select></div>
+  </div>
+
+  <div class="card"><div class="card-hd"><h2>Timer e avisos</h2></div>
+    <div class="field"><label>Timer automático<small>abre ao registrar cada série</small></label>
+      <input type="checkbox" ${st.cfg.autoTimer ? 'checked' : ''} data-cfg-bool="autoTimer"></div>
+    <div class="field"><label>Som no fim do descanso</label>
+      <input type="checkbox" ${st.cfg.som ? 'checked' : ''} data-cfg-bool="som"></div>
+    <div class="field"><label>Vibração</label>
+      <input type="checkbox" ${st.cfg.vibrar ? 'checked' : ''} data-cfg-bool="vibrar"></div>
+    ${Object.keys(EX).map(id => `<div class="field"><label>Descanso · ${EX[id].nome}<small>segundos</small></label>
+      <input type="number" min="30" max="360" step="15" value="${EX[id].descanso}" data-desc="${id}"></div>`).join('')}
+  </div>
+
+  <div class="card"><div class="card-hd"><h2>Dados</h2></div>
+    <div class="btn-row"><button class="btn" data-act="csv">CSV</button>
+      <button class="btn" data-act="json">JSON</button>
+      <button class="btn" data-act="importar">Importar</button></div>
+    <input type="file" id="fileImp" accept="application/json" style="display:none">
+    <div class="sp"></div>
+    <button class="btn ghost" id="btnInstalar" style="display:none" data-act="instalar">Instalar o app no celular</button>
+    <div class="sp"></div>
+    <button class="btn ghost" data-act="zerar" style="color:var(--pesada)">Apagar tudo e recomeçar</button>
+    <p class="muted" style="font-size:12px;margin:12px 0 0">Tudo fica salvo só neste aparelho. Exporte o JSON de vez em quando se não quiser perder o histórico.</p>
+  </div>`;
+  if (deferredPrompt) $('#btnInstalar').style.display = '';
+}
+
+/* ---------- 12. AÇÕES ---------- */
+let deferredPrompt = null;
+
+function estimaRPE(x, s) {
+  const fb1 = x.series[0].fb, base = fb1 ? RPE_FB[fb1] : 8;
+  let r = base + 0.5 * (s.n - 1);
+  if (s.reps < EX[x.id].reps) r += 1;
+  return Math.min(10, Math.round(r * 2) / 2);
+}
+
+function registrarSerie(fb) {
+  const x = sess.ex[sess.idx], e = EX[x.id], s = x.series[x.s];
+  s.reps = sess.reps; s.feita = true;
+  if (fb) { const m = aplicarFeedback(x, s, fb); if (m) toast(m); }
+  if (!s.rpe) s.rpe = estimaRPE(x, s);
+
+  const ultima = x.s + 1 >= x.series.length;
+  const proxTxt = ultima
+    ? (sess.idx + 1 < sess.ex.length
+      ? 'A seguir: <b>' + EX[sess.ex[sess.idx + 1].id].nome + '</b><br>Aproveite para trocar as anilhas.'
+      : 'Último exercício concluído.')
+    : 'A seguir: <b>série ' + (s.n + 1) + '</b> de ' + e.nome + ' com <b>' + x.series[x.s + 1].lado + ' kg por lado</b>';
+
+  if (ultima) { x.fim = true; sess.reps = null; }
+  else { x.s++; sess.reps = e.reps; }
+  salvarSessao(); render();
+
+  descansar(e.descanso, proxTxt, usado => { s.descanso = usado; salvarSessao(); render(); });
+}
+
+document.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-act]'); if (!el) return;
+  const a = el.dataset.act;
+
+  if (a === 'iniciar') {
+    novaSessao(el.dataset.t); ir('sessao');
+    try { navigator.wakeLock && navigator.wakeLock.request('screen'); } catch (e) { }
+    return;
+  }
+  if (a === 'ir-sessao') return ir('sessao');
+  if (!sess && ['check', 'fase-ex', 'aq', 'reps', 'carga', 'fb', 'registrar', 'proximo', 'sug', 'salvar-sessao', 'cancelar'].includes(a)) return;
+
+  switch (a) {
+    case 'check': sess.check[+el.dataset.i] = !sess.check[+el.dataset.i]; salvarSessao(); render(); break;
+    case 'fase-ex': sess.fase = 'exercicios'; sess.reps = EX[sess.ex[0].id].reps; salvarSessao(); render(); break;
+    case 'aq': { const i = +el.dataset.i; const x = sess.ex[sess.idx]; x.aquecFeito[i] = !x.aquecFeito[i]; salvarSessao(); render(); break; }
+    case 'reps': {
+      const e = EX[sess.ex[sess.idx].id];
+      sess.reps = Math.max(0, Math.min(30, sess.reps + (+el.dataset.d)));
+      salvarSessao(); render(); break;
+    }
+    case 'carga': {
+      const x = sess.ex[sess.idx], e = EX[x.id], d = +el.dataset.d;
+      const passo = incremento(x.id);
+      const novo = snap(Math.max(0, x.lado + d * passo), e.imp);
+      if (novo === x.lado) { toast('Estoque de anilhas não permite'); break; }
+      x.lado = novo; x.series.forEach(s => { if (!s.feita) s.lado = novo; });
+      salvarSessao(); render(); break;
+    }
+    case 'fb': registrarSerie(el.dataset.f); break;
+    case 'registrar': registrarSerie(el.dataset.f || null); break;
+    case 'proximo':
+      if (sess.idx + 1 < sess.ex.length) { sess.idx++; sess.reps = EX[sess.ex[sess.idx].id].reps; }
+      else sess.fase = 'resumo';
+      salvarSessao(); render(); break;
+    case 'sug': {
+      const i = +el.dataset.i, x = sess.ex[i], e = EX[x.id];
+      const novo = snap(Math.max(0, sess.aceite[i] + (+el.dataset.d) * incremento(x.id)), e.imp);
+      if (novo === sess.aceite[i]) { toast('Estoque de anilhas não permite'); break; }
+      sess.aceite[i] = novo; salvarSessao(); render(); break;
+    }
+    case 'salvar-sessao': {
+      const r = encerrarSessao(sess.aceite);
+      toast('Treino salvo · ' + (r.tonelagem / 1000).toFixed(1) + ' t');
+      ir('home'); break;
+    }
+    case 'cancelar':
+      if (confirm('Cancelar o treino? As séries registradas serão descartadas.')) { limparSessao(); ir('home'); }
+      break;
+    case 'del':
+      if (confirm('Excluir este treino do histórico?')) {
+        st.hist = st.hist.filter(h => h.id !== el.dataset.id); salvar(); render();
+      }
+      break;
+    case 'csv': exportarCSV(); break;
+    case 'json': exportarJSON(); break;
+    case 'importar': $('#fileImp').click(); break;
+    case 'zerar':
+      if (confirm('Apagar histórico, cargas e ciclo? Não dá para desfazer.') && confirm('Confirma mesmo? Exporte o JSON antes se quiser guardar.')) {
+        st = estadoNovo(); limparSessao(); salvar(); ir('home'); toast('Tudo zerado');
+      }
+      break;
+    case 'instalar':
+      if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
+      else toast('Use o menu do navegador: Adicionar à tela de início');
+      break;
+  }
+});
+
+document.addEventListener('change', ev => {
+  const el = ev.target;
+  if (el.dataset.cfg) {
+    st.cfg[el.dataset.cfg] = parseFloat(el.value) || 0; salvar(); render(); toast('Ajuste salvo');
+  } else if (el.dataset.cfgBool) {
+    st.cfg[el.dataset.cfgBool] = el.checked; salvar();
+  } else if (el.dataset.cfgSel) {
+    const k = el.dataset.cfgSel;
+    st[k] = k === 'semanaManual' ? +el.value : el.value; salvar(); render();
+  } else if (el.dataset.inv) {
+    st.inv[el.dataset.inv] = Math.max(0, parseInt(el.value) || 0);
+    Object.keys(EX).forEach(id => st.cargas[id] = snap(st.cargas[id], EX[id].imp));
+    salvar(); render(); toast('Estoque atualizado');
+  } else if (el.dataset.carga) {
+    const id = el.dataset.carga, alvo = parseFloat(el.value) || 0;
+    const v = snap(alvo, EX[id].imp);
+    st.cargas[id] = v; salvar(); render();
+    toast(v !== alvo ? 'Ajustado para ' + v + ' kg/lado (anilhas disponíveis)' : 'Carga salva');
+  } else if (el.dataset.desc) {
+    const id = el.dataset.desc, v = Math.max(30, parseInt(el.value) || 60);
+    EX[id].descanso = v;
+    st.cfg.descansos = st.cfg.descansos || {}; st.cfg.descansos[id] = v;
+    salvar();
+  } else if (el.dataset.act === 'graf-ex') {
+    st.grafEx = el.value; render();
+  } else if (el.id === 'fileImp' && el.files[0]) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        const o = JSON.parse(fr.result);
+        if (!o || !o.cargas) throw 0;
+        st = { ...estadoNovo(), ...o };
+        aplicaDescansos(); salvar(); ir('home'); toast('Dados importados');
+      } catch (e) { toast('Arquivo inválido'); }
+    };
+    fr.readAsText(el.files[0]);
+  }
+});
+
+/* ---------- 13. EXPORTAÇÃO ---------- */
+function baixar(nome, txt, tipo) {
+  try {
+    const b = new Blob([txt], { type: tipo });
+    const u = URL.createObjectURL(b), a = document.createElement('a');
+    a.href = u; a.download = nome; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(u); a.remove(); }, 1500);
+    toast('Arquivo gerado');
+  } catch (e) { toast('Não consegui gerar o arquivo aqui'); }
+}
+function exportarCSV() {
+  const cab = ['data', 'hora', 'ciclo', 'semana', 'deload', 'treino', 'exercicio', 'serie',
+    'carga_lado_kg', 'carga_implemento_kg', 'carga_total_kg', 'anilhas_por_lado',
+    'reps', 'feedback', 'rpe', 'descanso_s', 'rm_epley_kg', 'duracao_sessao_s'];
+  const linhas = [cab.join(';')];
+  st.hist.forEach(h => h.ex.forEach(x => x.series.forEach(s => {
+    const d = new Date(h.data);
+    linhas.push([
+      d.toLocaleDateString('pt-BR'), d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+      h.ciclo, h.semana, h.deload ? 'sim' : 'nao', h.tipo, EX[x.id].nome, s.n,
+      s.lado, s.implemento, s.total, '"' + textoCombo(s.lado, x.imp) + '"',
+      s.reps, s.fb || '', s.rpe ?? '', s.descanso ?? '',
+      epley(s.total, s.reps).toFixed(1).replace('.', ','), h.duracao
+    ].join(';'));
+  })));
+  baixar('forja-treinos-' + new Date().toISOString().slice(0, 10) + '.csv', '\uFEFF' + linhas.join('\n'), 'text/csv;charset=utf-8');
+}
+function exportarJSON() {
+  baixar('forja-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(st, null, 2), 'application/json');
+}
+
+/* ---------- 14. INÍCIO ---------- */
+function aplicaDescansos() {
+  if (st.cfg && st.cfg.descansos) Object.keys(st.cfg.descansos).forEach(id => { if (EX[id]) EX[id].descanso = st.cfg.descansos[id]; });
+  Object.keys(EX).forEach(id => { st.cargas[id] = snap(st.cargas[id], EX[id].imp); });
+}
+
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; const b = document.getElementById('btnInstalar'); if (b) b.style.display = ''; });
+window.addEventListener('beforeunload', e => { if (sess && sess.fase === 'exercicios') { e.preventDefault(); e.returnValue = ''; } });
+
+st = carregar();
+aplicaDescansos();
+retomarSessao();
+if (sess) { ir('sessao'); } else { ir('home'); }
+salvar();
+
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));
+}
+
+</script>
+</body>
+</html>
