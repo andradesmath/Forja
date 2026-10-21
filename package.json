@@ -1,0 +1,11 @@
+{
+  "name": "forja",
+  "private": true,
+  "description": "FORJA — PWA de treino de força. Dependências só das funções em api/ (Web Push e sincronização).",
+  "dependencies": {
+    "@vercel/blob": "^2.8.2",
+    "@vercel/functions": "^3.10.2",
+    "jsdom": "^29.1.1",
+    "web-push": "^3.6.7"
+  }
+}

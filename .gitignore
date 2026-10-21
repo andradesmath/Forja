@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+vapid-keys.txt
+sync-key.txt
+.vercel
+
+.vercel
+.env*

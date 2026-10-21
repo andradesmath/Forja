@@ -279,6 +279,7 @@ details li b{color:var(--cal)}
 
 <div id="toast"></div>
 
+<script src="merge.js"></script>
 <script>
 /* ============================================================
    FORJA — motor de treino
@@ -426,6 +427,7 @@ const PERSISTE = (() => { try { return typeof localStorage !== 'undefined' && !!
 
 const CHAVE = 'forja.v2';
 let st, sess = null;
+let ultimoHash = '';   // estado na última gravação; `mod` só sobe quando algo muda de verdade
 
 function estadoNovo() {
   const cargas = {};
@@ -433,28 +435,38 @@ function estadoNovo() {
   return {
     v: 2, cfg: { ...CFG_PADRAO }, inv: { ...INV_PADRAO },
     cargas, ciclo: 1, sessoesCiclo: 0, semanaManual: 0,
-    proximo: 'A', snapshotS3: null, cicloInicio: null, hist: [],
+    proximo: 'A', snapshotS3: null, cicloInicio: null, mod: 0, apagados: [], hist: [],
     falhas: {}, resets: {}, esquema: {}, progAlt: {},
     reentrada: null, backupEm: 0
+  };
+}
+function mesclar(o) {   // completa um estado salvo/importado com os campos novos (cfg, cargas, etc.)
+  const base = estadoNovo();
+  return {
+    ...base, ...o,
+    cfg: { ...base.cfg, ...(o.cfg || {}) },
+    inv: { ...base.inv, ...(o.inv || {}) },
+    cargas: { ...base.cargas, ...(o.cargas || {}) },
+    hist: Array.isArray(o.hist) ? o.hist : [],
+    apagados: Array.isArray(o.apagados) ? o.apagados : [],
+    falhas: { ...(o.falhas || {}) }, resets: { ...(o.resets || {}) },
+    esquema: { ...(o.esquema || {}) }, progAlt: { ...(o.progAlt || {}) }
   };
 }
 function carregar() {
   try {
     const raw = store.getItem(CHAVE);
     if (!raw) return estadoNovo();
-    const o = JSON.parse(raw);
-    const base = estadoNovo();
-    return {
-      ...base, ...o,
-      cfg: { ...base.cfg, ...(o.cfg || {}) },
-      inv: { ...base.inv, ...(o.inv || {}) },
-      cargas: { ...base.cargas, ...(o.cargas || {}) },
-      falhas: { ...(o.falhas || {}) }, resets: { ...(o.resets || {}) },
-      esquema: { ...(o.esquema || {}) }, progAlt: { ...(o.progAlt || {}) }
-    };
+    return mesclar(JSON.parse(raw));
   } catch (e) { return estadoNovo(); }
 }
-function salvar() { try { store.setItem(CHAVE, JSON.stringify(st)); } catch (e) { toast('Não consegui salvar neste navegador'); } }
+function hashEstado(o) { const { mod, grafEx, ...r } = o; return JSON.stringify(r); }   // grafEx é só da tela
+function salvar() {
+  const h = hashEstado(st);
+  if (h !== ultimoHash) { st.mod = Date.now(); ultimoHash = h; }
+  try { store.setItem(CHAVE, JSON.stringify(st)); } catch (e) { toast('Não consegui salvar neste navegador'); }
+  agendarSync();
+}
 
 /* ---------- 3. MOTOR DE ANILHAS ---------- */
 function pontas(imp) { return imp === 'halteres' ? 4 : 2; }   // halteres = 2 pares de pontas
@@ -931,6 +943,54 @@ function beep(freq, dur) {
 }
 function vibrar(p) { if (st.cfg.vibrar && navigator.vibrate) try { navigator.vibrate(p); } catch (e) { } }
 
+/* ---------- Web Push: aviso no fim do descanso com o app fechado ---------- */
+const VAPID_PUBLIC = 'BP-T3DqpSuefGBDu-4MyrYCmTHdrij5LsU6Pmjqkx4a71COqQVqSUc1p0k7N_KwZAPb6bhbElYCTNZWS5xyhHEY';
+const API_DESCANSO = '/api/descanso';
+const MAX_PUSH_S = 280;   // a função do servidor espera no máximo ~285 s
+function b64ToU8(b) {
+  const p = '='.repeat((4 - b.length % 4) % 4), r = atob((b + p).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(r, c => c.charCodeAt(0));
+}
+async function pushSub() {   // inscrição push deste aparelho (null se indisponível ou sem permissão)
+  try {
+    if (location.protocol.indexOf('http') !== 0 || !('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return null;
+    const reg = await navigator.serviceWorker.ready;
+    return (await reg.pushManager.getSubscription()) ||
+      (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUBLIC) }));
+  } catch (e) { return null; }
+}
+async function marcarRest(id) {   // o SW lê este marcador para descartar avisos cancelados ou desatualizados
+  try {
+    const c = await caches.open('forja-aviso');
+    await c.put('/__rest', new Response(JSON.stringify({ id }), { headers: { 'Content-Type': 'application/json' } }));
+  } catch (e) { }
+}
+async function enviarPush(id, seg) {
+  const sub = await pushSub();
+  if (!sub) return false;
+  try {
+    const r = await fetch(API_DESCANSO, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sub: sub.toJSON(), delay: seg, id }) });
+    return r.ok;
+  } catch (e) { return false; }
+}
+async function agendarPush() {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  T.pid = id; T.push = false;
+  marcarRest(id);
+  const resto = Math.round((T.fim - Date.now()) / 1000);
+  if (!st.cfg.notificar || resto < 1 || resto > MAX_PUSH_S) return;
+  const ok = await enviarPush(id, resto);
+  if (ok && T.pid === id) { T.push = true; agendarSW(false); }   // push ativo: dispensa o aviso local de reserva
+}
+async function testePush() {
+  if (Notification.permission !== 'granted') { toast('Permita as notificações primeiro'); return; }
+  await marcarRest('teste');
+  const ok = await enviarPush('teste', 10);
+  toast(ok ? 'Feche o app ou apague a tela: o aviso chega em ~10 s' : 'Servidor não respondeu — veja o LEIA-ME (variáveis VAPID)');
+}
+
 /* ---------- alarme, notificação e tela ligada ---------- */
 let alarmeIv = null, wl = null;
 function audioCtx() {   // criado/retomado dentro de um toque do usuário (exigência do navegador)
@@ -965,7 +1025,12 @@ async function pedirNotificacao() {
   if (!('Notification' in window)) { toast('Este navegador não suporta notificações'); return; }
   let r = Notification.permission;
   try { if (r !== 'granted') r = await Notification.requestPermission(); } catch (e) { }
-  if (r === 'granted') { st.cfg.notificar = true; salvar(); toast('Notificações ativadas'); notificar('FORJA', 'Notificações ativadas.'); }
+  if (r === 'granted') {
+    st.cfg.notificar = true; salvar();
+    const sub = await pushSub();
+    toast(sub ? 'Notificações ativadas (push registrado)' : 'Notificações ativadas, sem push neste navegador');
+    notificar('FORJA', 'Notificações ativadas.');
+  }
   else toast('Permissão negada — libere nas configurações do navegador');
   render();
 }
@@ -985,7 +1050,7 @@ async function manterTela() {
 function soltarTela() { try { wl && wl.release(); } catch (e) { } wl = null; }
 function fimDescanso() {
   tocarAlarme();
-  if (document.hidden) notificar('FORJA · descanso acabou', 'Hora da próxima série.');
+  if (document.hidden && !T.push) notificar('FORJA · descanso acabou', 'Hora da próxima série.');
   agendarSW(false);
 }
 document.addEventListener('visibilitychange', () => {
@@ -998,7 +1063,7 @@ function descansar(seg, texto, cb) {
   T.dur = seg; T.inicio = Date.now(); T.fim = Date.now() + seg * 1000; T.on = true; T.cb = cb; T._avisou = {};
   $('#restNext').innerHTML = texto || '';
   $('#rest').classList.add('on');
-  audioCtx(); manterTela(); agendarSW(true);
+  audioCtx(); manterTela(); agendarSW(true); agendarPush();
   clearInterval(T.iv); cancelAnimationFrame(T.raf);
   T.iv = setInterval(tickTimer, 500);   // continua rodando com a página em segundo plano (rAF não)
   laco();
@@ -1019,15 +1084,15 @@ function tickTimer() {
 }
 function fecharTimer() {
   if (!T.on) return;
-  T.on = false; cancelAnimationFrame(T.raf); clearInterval(T.iv); pararAlarme(); agendarSW(false);
+  T.on = false; cancelAnimationFrame(T.raf); clearInterval(T.iv); pararAlarme(); agendarSW(false); T.pid = null; T.push = false; marcarRest(null);
   $('#rest').classList.remove('on');
   const usado = Math.round((Date.now() - T.inicio) / 1000);
   const cb = T.cb; T.cb = null;
   cb && cb(usado);
 }
 $('#restSkip').onclick = fecharTimer;
-$('#restPlus').onclick = () => { T.fim += 30000; T.dur += 30; T._avisou = {}; pararAlarme(); agendarSW(true); };
-$('#restMinus').onclick = () => { T.fim -= 30000; agendarSW(true); };
+$('#restPlus').onclick = () => { T.fim += 30000; T.dur += 30; T._avisou = {}; pararAlarme(); agendarSW(true); agendarPush(); };
+$('#restMinus').onclick = () => { T.fim -= 30000; agendarSW(true); agendarPush(); };
 $('#rest').addEventListener('click', pararAlarme);   // qualquer toque na tela silencia o alarme
 
 /* relógio da sessão */
@@ -1475,9 +1540,21 @@ function renderAjustes() {
       <input type="checkbox" ${st.cfg.alarme ? 'checked' : ''} data-cfg-bool="alarme"></div>
     <div class="field"><label>Notificação no fim do descanso<small>com o app em segundo plano · permissão: ${'Notification' in window ? ({ granted: 'concedida', denied: 'negada', default: 'não pedida' }[Notification.permission]) : 'indisponível'}</small></label>
       <input type="checkbox" ${st.cfg.notificar ? 'checked' : ''} data-cfg-bool="notificar"></div>
-    <button class="btn sm ghost" data-act="notif">Permitir notificações</button>
+    <div class="btn-row"><button class="btn sm ghost" data-act="notif">Permitir notificações</button>
+      <button class="btn sm ghost" data-act="teste-push">Testar aviso (10 s)</button></div>
     ${Object.keys(EX).map(id => `<div class="field"><label>Descanso · ${EX[id].nome}<small>segundos</small></label>
       <input type="number" min="30" max="360" step="15" value="${EX[id].descanso}" data-desc="${id}"></div>`).join('')}
+  </div>
+
+  <div class="card"><div class="card-hd"><h2>Sincronização</h2></div>
+    ${chaveSync() ? `<p class="muted" style="font-size:13.5px;margin:0 0 10px">Conectado${emSyncTxt()}${syncMsg ? ' · ' + syncMsg : ''}</p>
+      <div class="btn-row"><button class="btn" data-act="sync-agora">Sincronizar agora</button>
+        <button class="btn ghost" data-act="sync-sair">Desconectar</button></div>`
+    : `<div class="field"><label>Chave pessoal<small>a mesma em todos os aparelhos</small></label>
+        <input type="password" id="syncChave" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"></div>
+      <button class="btn" data-act="sync-entrar">Conectar e sincronizar</button>`}
+    <p class="muted" style="font-size:12.5px;margin:12px 0 0">Sincroniza ao abrir o app e depois de cada treino salvo. Treinos de aparelhos diferentes são unidos
+      sem perder nem duplicar. Conecte um aparelho novo <b>antes</b> de treinar nele.</p>
   </div>
 
   <div class="card"><div class="card-hd"><h2>Dados</h2></div>
@@ -1627,18 +1704,37 @@ document.addEventListener('click', ev => {
       break;
     case 'del':
       if (confirm('Excluir este treino do histórico?')) {
-        st.hist = st.hist.filter(h => h.id !== el.dataset.id); salvar(); render();
+        st.hist = st.hist.filter(h => h.id !== el.dataset.id);
+        st.apagados = (st.apagados || []).concat(el.dataset.id);   // lápide: impede o treino de voltar da nuvem
+        salvar(); render();
       }
       break;
     case 'csv': exportarCSV(); break;
     case 'json': exportarJSON(); break;
     case 'importar': $('#fileImp').click(); break;
     case 'zerar':
-      if (confirm('Apagar histórico, cargas e ciclo? Não dá para desfazer.') && confirm('Confirma mesmo? Exporte o JSON antes se quiser guardar.')) {
-        st = estadoNovo(); limparSessao(); salvar(); ir('home'); toast('Tudo zerado');
+      if (confirm('Apagar histórico, cargas e ciclo DESTE aparelho? Com a sincronização ligada, tudo volta da nuvem na próxima sincronização.') && confirm('Confirma mesmo? Exporte o JSON antes se quiser guardar.')) {
+        st = estadoNovo(); ultimoHash = hashEstado(st); limparSessao(); salvar(); ir('home'); toast('Tudo zerado neste aparelho');
       }
       break;
+    case 'sync-entrar': {
+      const v = ($('#syncChave') || {}).value || '';
+      if (v.replace(/[^A-Za-z0-9]/g, '').length < 16) { toast('Chave incompleta'); break; }
+      /* aparelho novo (sem treinos) nunca sobrescreve a nuvem; aparelho com dados antigos sem marca ganha uma */
+      if (!st.hist.length) st.mod = 0; else if (!st.mod) st.mod = Date.now();
+      try { store.setItem(CHAVE_SYNC, v.trim()); store.setItem(CHAVE, JSON.stringify(st)); } catch (e) { }
+      sincronizar(true).then(ok => {
+        if (!ok && syncMsg === 'chave recusada') { try { store.removeItem(CHAVE_SYNC); } catch (e) { } }
+        render();
+      });
+      break;
+    }
+    case 'sync-agora': sincronizar(true).then(() => render()); break;
+    case 'sync-sair':
+      try { store.removeItem(CHAVE_SYNC); store.removeItem(EM_SYNC); } catch (e) { }
+      toast('Desconectado — os dados continuam neste aparelho'); render(); break;
     case 'notif': pedirNotificacao(); break;
+    case 'teste-push': testePush(); break;
     case 'instalar':
       if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
       else toast('Use o menu do navegador: Adicionar à tela de início');
@@ -1677,7 +1773,7 @@ document.addEventListener('change', ev => {
       try {
         const o = JSON.parse(fr.result);
         if (!o || !o.cargas) throw 0;
-        st = { ...estadoNovo(), ...o };
+        st = mesclar(o);
         aplicaDescansos(); salvar(); ir('home'); toast('Dados importados');
       } catch (e) { toast('Arquivo inválido'); }
     };
@@ -1723,15 +1819,74 @@ function aplicaDescansos() {
   Object.keys(EX).forEach(id => { st.cargas[id] = snap(st.cargas[id], EX[id].imp); });
 }
 
+/* ---------- SINCRONIZAÇÃO ENTRE APARELHOS ---------- */
+/* O estado vai para um JSON privado no Vercel Blob (api/sync.js). Treinos são unidos por id (merge.js):
+   nada se perde nem duplica. Cargas/ciclo/ajustes vêm do aparelho com alteração mais recente. */
+const CHAVE_SYNC = 'forja.sync', EM_SYNC = 'forja.sync.em', PRE_SYNC = 'forja.pre-sync';
+let syncTimer = null, syncBusy = false, syncMsg = '';
+function chaveSync() { try { return store.getItem(CHAVE_SYNC) || ''; } catch (e) { return ''; } }
+function emSyncTxt() {
+  try { const t = +store.getItem(EM_SYNC); return t ? ' · última sincronização ' + new Date(t).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''; }
+  catch (e) { return ''; }
+}
+function agendarSync(ms) {
+  if (!chaveSync()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => sincronizar(), ms == null ? 4000 : ms);   // junta gravações seguidas
+}
+function aplicarEstado(rem) {   // mescla com a nuvem sem marcar o estado como "modificado"
+  const local = st;
+  try { store.setItem(PRE_SYNC, JSON.stringify(local)); } catch (e) { }   // cópia de segurança do estado anterior
+  const m = ForjaMerge.mesclarEstados(local, rem);
+  m.cfg = { ...(m.cfg || {}), notificar: local.cfg.notificar };            // permissão de notificação é por aparelho
+  st = mesclar(m);
+  aplicaDescansos();
+  ultimoHash = hashEstado(st);
+  try { store.setItem(CHAVE, JSON.stringify(st)); } catch (e) { }
+  return m;
+}
+async function sincronizar(manual, tent) {
+  const k = chaveSync();
+  if (!k || syncBusy) return false;
+  if (sess) { if (manual) toast('Termine o treino antes de sincronizar'); return false; }   // não troca o estado no meio do treino
+  if (navigator.onLine === false) { syncMsg = 'sem internet'; return false; }
+  syncBusy = true;
+  try {
+    const r = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + k },
+      body: JSON.stringify({ estado: st }) });
+    if (r.status === 401) { syncMsg = 'chave recusada'; if (manual) toast('Chave recusada'); return false; }
+    if (!r.ok) throw new Error(r.status);
+    const { estado } = await r.json();
+    const antes = ForjaMerge.chave(estado);
+    const m = aplicarEstado(estado);
+    store.setItem(EM_SYNC, String(Date.now())); syncMsg = '';
+    if (manual) toast('Sincronizado');
+    if (viewAtual !== 'sessao') render();
+    syncBusy = false;
+    if (ForjaMerge.chave(m) !== antes && !tent) return await sincronizar(manual, 1);   // havia algo local que a nuvem ainda não tem
+    return true;
+  } catch (e) {
+    syncMsg = 'falhou — tenta de novo ao abrir o app'; if (manual) toast('Não consegui sincronizar'); return false;
+  } finally { syncBusy = false; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  const t = +(store.getItem(EM_SYNC) || 0);
+  if (Date.now() - t > 60000) agendarSync(300);
+});
+window.addEventListener('online', () => agendarSync(500));
+
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; const b = document.getElementById('btnInstalar'); if (b) b.style.display = ''; });
 window.addEventListener('beforeunload', e => { if (sess && sess.fase === 'exercicios') { e.preventDefault(); e.returnValue = ''; } });
 
 st = carregar();
+ultimoHash = hashEstado(st);
 aplicaDescansos();
 checarReentrada();
 retomarSessao();
 if (sess) { ir('sessao'); manterTela(); } else { ir('home'); }
 salvar();
+agendarSync(800);
 
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));

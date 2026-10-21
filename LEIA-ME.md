@@ -185,10 +185,29 @@ opcional de vídeos de técnica, que abre uma busca no YouTube.
 
 - **Alarme**: ao zerar o descanso o app toca e vibra repetidamente até você tocar na tela
   (máx. ~35 s). Desative em *Ajustes → Timer e avisos*.
-- **Notificação**: libere em *Ajustes → Permitir notificações*. Com o app em segundo plano,
-  o aviso aparece quando o descanso acaba.
 - **Tela ligada**: durante o treino o app pede ao celular para não apagar a tela e religa a
   trava ao voltar para o app.
-- **Limite**: sem servidor de push, nenhum PWA garante alarme com o app fechado ou o celular
-  bloqueado. No iPhone, notificações só funcionam com o app instalado na tela de início
-  (iOS 16.4+). O mais confiável é manter o app aberto e a tela ligada.
+- **Aviso com o app fechado (Web Push)**: ao iniciar o descanso, o app chama
+  `POST /api/descanso`; a função do Vercel espera o tempo restante e envia o push. Funciona
+  com a tela apagada e o app fechado.
+  - Descansos acima de 280 s não usam push (limite da função); valem o alarme e o aviso locais.
+  - Pular, +30 s e −30 s invalidam o aviso anterior (o app grava o id do descanso vigente).
+  - O aviso usa o som e a vibração de notificação do sistema; não é um alarme do relógio,
+    não fura o modo silencioso nem o "Não perturbe".
+  - iPhone: só com o app instalado na tela de início (iOS 16.4+).
+
+### Ativar o push (uma vez)
+
+1. As chaves estão em `vapid-keys.txt` (fora do Git, ver `.gitignore`).
+2. No Vercel: *Project → Settings → Environment Variables*, criar `VAPID_PUBLIC_KEY` e
+   `VAPID_PRIVATE_KEY` com os valores do arquivo (Production, Preview e Development).
+3. Fazer deploy (`git push`). A chave pública também fica em `index.html` (`VAPID_PUBLIC`);
+   se gerar novas chaves, atualize os dois lugares e todos os aparelhos precisam permitir de novo.
+4. No celular: reinstale o app, abra *Ajustes → Permitir notificações* e use
+   *Testar aviso (10 s)*; feche o app e espere.
+5. A função precisa de duração até 300 s (Hobby com Fluid compute, padrão em projetos novos).
+   Se o deploy recusar `maxDuration: 300`, ative o Fluid compute em *Settings → Functions*.
+
+Segurança: a função só aceita chamadas do próprio domínio, endpoints dos serviços de push
+conhecidos e texto fixo. Qualquer pessoa com a URL do seu app e uma inscrição válida poderia
+disparar avisos nela; a inscrição é secreta e fica só no aparelho.
