@@ -1547,7 +1547,7 @@ function renderAjustes() {
   </div>
 
   <div class="card"><div class="card-hd"><h2>Sincronização</h2></div>
-    ${chaveSync() ? `<p class="muted" style="font-size:13.5px;margin:0 0 10px">Conectado${emSyncTxt()}${syncMsg ? ' · ' + syncMsg : ''}</p>
+    ${chaveSync() ? `<p class="muted" style="font-size:13.5px;margin:0 0 10px">Conectado${emSyncTxt()}${syncN != null ? ' · ' + syncN + ' treino(s) na nuvem, ' + st.hist.length + ' neste aparelho' : ''}${syncMsg ? ' · ' + syncMsg : ''}</p>
       <div class="btn-row"><button class="btn" data-act="sync-agora">Sincronizar agora</button>
         <button class="btn ghost" data-act="sync-sair">Desconectar</button></div>`
     : `<div class="field"><label>Chave pessoal<small>a mesma em todos os aparelhos</small></label>
@@ -1823,7 +1823,7 @@ function aplicaDescansos() {
 /* O estado vai para um JSON privado no Vercel Blob (api/sync.js). Treinos são unidos por id (merge.js):
    nada se perde nem duplica. Cargas/ciclo/ajustes vêm do aparelho com alteração mais recente. */
 const CHAVE_SYNC = 'forja.sync', EM_SYNC = 'forja.sync.em', PRE_SYNC = 'forja.pre-sync';
-let syncTimer = null, syncBusy = false, syncMsg = '';
+let syncTimer = null, syncBusy = false, syncMsg = '', syncN = null;   // syncN: treinos na nuvem após a última sincronização
 function chaveSync() { try { return store.getItem(CHAVE_SYNC) || ''; } catch (e) { return ''; } }
 function emSyncTxt() {
   try { const t = +store.getItem(EM_SYNC); return t ? ' · última sincronização ' + new Date(t).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''; }
@@ -1855,18 +1855,21 @@ async function sincronizar(manual, tent) {
     const r = await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + k },
       body: JSON.stringify({ estado: st }) });
     if (r.status === 401) { syncMsg = 'chave recusada'; if (manual) toast('Chave recusada'); return false; }
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) {   // mostra o motivo real (ex.: HTTP 500: armazenamento)
+      let e = ''; try { e = (await r.json()).erro || ''; } catch (_) { }
+      throw new Error('HTTP ' + r.status + (e ? ': ' + e : ''));
+    }
     const { estado } = await r.json();
     const antes = ForjaMerge.chave(estado);
     const m = aplicarEstado(estado);
-    store.setItem(EM_SYNC, String(Date.now())); syncMsg = '';
+    store.setItem(EM_SYNC, String(Date.now())); syncMsg = ''; syncN = (estado.hist || []).length;
     if (manual) toast('Sincronizado');
     if (viewAtual !== 'sessao') render();
     syncBusy = false;
     if (ForjaMerge.chave(m) !== antes && !tent) return await sincronizar(manual, 1);   // havia algo local que a nuvem ainda não tem
     return true;
   } catch (e) {
-    syncMsg = 'falhou — tenta de novo ao abrir o app'; if (manual) toast('Não consegui sincronizar'); return false;
+    syncMsg = 'falhou (' + (e && e.message ? e.message : 'sem conexão') + ')'; if (manual) toast('Não consegui sincronizar'); return false;
   } finally { syncBusy = false; }
 }
 document.addEventListener('visibilitychange', () => {
