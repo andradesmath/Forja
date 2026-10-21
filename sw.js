@@ -1,5 +1,5 @@
 /* FORJA — service worker: cache-first com atualização em segundo plano */
-const CACHE = 'forja-v2';
+const CACHE = "forja-v4";
 const ARQUIVOS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable.png'];
 
 self.addEventListener('install', e => {

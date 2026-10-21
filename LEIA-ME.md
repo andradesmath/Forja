@@ -14,7 +14,7 @@ longa de 10 kg. Com barra de 10 kg, os totais reais ficam assim:
 |---|---|---|---|
 | Agachamento | 10 kg | **30 kg** | 40 kg |
 | Supino reto | 15 kg | **40 kg** | 50 kg |
-| Remada curvada | 10 kg | **30 kg** | 40 kg |
+| Remada no banco inclinado | 10 kg | **30 kg** | 40 kg |
 | Levantamento terra | 20 kg | **50 kg** | 60 kg |
 | Desenvolvimento militar | 5 kg | **20 kg** | 30 kg |
 | Afundo com halteres | 3 kg | **8 kg por halter** | 8 kg por halter |
@@ -128,6 +128,7 @@ desenvolvimento 2:30 · afundo 1:45.
 
 - **Registro por série**: data, ciclo, semana, exercício, carga por lado, carga por
   implemento, carga total, anilhas usadas, repetições, feedback, RPE, descanso real.
+- **Indicadores por exercício** (aba Evolução): volume total e por sessão, maior carga, variação do 1RM, reps por série, % de sessões com alvo cumprido, intensidade média (% do 1RM), RPE médio, descanso médio, frequência semanal e gráfico de volume por sessão. Deload fica fora da variação de 1RM, da taxa de alvo e da intensidade.
 - **1RM estimado** pela fórmula de Epley: `1RM = peso × (1 + reps ÷ 30)`.
 - **Gráfico** por exercício com carga total (linha cheia) e 1RM estimado (tracejada).
   Pontos em âmbar são sessões de deload.

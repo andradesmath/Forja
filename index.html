@@ -290,6 +290,23 @@ const ANILHAS = [10, 5, 3, 2];
 const INV_PADRAO = { 10: 4, 5: 8, 3: 4, 2: 4 };
 const INC = { superior: 2, inferior: 3 };   // kg por lado
 const RPE_FB = { Baixa: 7, Boa: 8.5, Pesada: 10 };
+const REPS_EXTRA_MAX = 3;          // repetições extras antes de trocar de técnica
+const LIMIAR_ESTAGNACAO = 2;       // sessões seguidas sem fechar o alvo
+const RESET_ESTAGNACAO = 0.90;     // reset de 10%
+const DIAS_DESTREINO = 10;         // pausa que dispara reentrada
+
+const TECNICAS = [
+  { n: 'execução normal', d: '' },
+  { n: 'pausa de 2 s', d: 'Pare 2 s no ponto de maior alongamento, sem perder a tensão.' },
+  { n: 'descida em 4 s', d: 'Conte 4 s na fase de descida de cada repetição.' },
+  { n: 'repetição 1½', d: 'Suba até a metade, volte ao fundo, então suba por completo. Isso conta como 1.' }
+];
+
+const RAMPAS = [
+  { ate: 21, etapas: [0.85, 0.92] },
+  { ate: 45, etapas: [0.75, 0.85, 0.92] },
+  { ate: 9999, etapas: [0.65, 0.75, 0.85, 0.92] }
+];
 
 const EX = {
   agachamento: {
@@ -319,17 +336,17 @@ const EX = {
     seguranca: 'Sem parceiro: travas de segurança na altura do peito, sempre. Alternativa segura para falhar: repetir com halteres.'
   },
   remada: {
-    nome: 'Remada curvada', grupo: 'superior', imp: 'barraLonga',
+    nome: 'Remada no banco inclinado', grupo: 'superior', imp: 'barraLonga',
     series: 3, reps: 8, descanso: 120, inicial: 10, unilateral: false,
     tecnica: [
-      '<b>Quadril para trás</b>, tronco entre 30° e 45° do chão, coluna neutra travada.',
-      '<b>Joelho</b> levemente flexionado e fixo — o movimento é só dos braços e escápulas.',
+      '<b>Banco</b> inclinado entre 30° e 45°, peito e abdômen apoiados; pés firmes no chão, pescoço alinhado à coluna.',
+      '<b>Posição inicial</b>: braços estendidos pendendo à frente, escápulas relaxadas, peito colado no encosto.',
       '<b>Puxada</b> em direção ao umbigo/parte baixa das costelas, cotovelo rente ao corpo.',
       '<b>Escápulas</b> se juntam no fim; segure 1 s antes de descer.',
-      '<b>Descida</b> controlada até estender o cotovelo — sem deixar o ombro cair à frente.',
-      '<b>Sem impulso</b> de tronco: se precisar jogar o corpo, a carga está alta.'
+      '<b>Descida</b> controlada até estender o cotovelo, sem perder o apoio do peito.',
+      '<b>Sem impulso</b>: o peito não descola do banco. Se descolar, a carga está alta.'
     ],
-    seguranca: 'Lombar é o elo fraco aqui. Ao primeiro arredondamento da coluna, encerre a série.'
+    seguranca: 'O banco alivia a lombar, mas a carga parte do chão: regule a altura para ela não bater no chão na descida e mantenha o pescoço neutro. Peito descolando do banco = reduza a carga.'
   },
   terra: {
     nome: 'Levantamento terra', grupo: 'inferior', imp: 'barraLonga',
@@ -412,7 +429,9 @@ function estadoNovo() {
   return {
     v: 2, cfg: { ...CFG_PADRAO }, inv: { ...INV_PADRAO },
     cargas, ciclo: 1, sessoesCiclo: 0, semanaManual: 0,
-    proximo: 'A', snapshotS3: null, hist: []
+    proximo: 'A', snapshotS3: null, hist: [],
+    falhas: {}, resets: {}, esquema: {}, progAlt: {},
+    reentrada: null, backupEm: 0
   };
 }
 function carregar() {
@@ -421,7 +440,14 @@ function carregar() {
     if (!raw) return estadoNovo();
     const o = JSON.parse(raw);
     const base = estadoNovo();
-    return { ...base, ...o, cfg: { ...base.cfg, ...(o.cfg || {}) }, inv: { ...base.inv, ...(o.inv || {}) }, cargas: { ...base.cargas, ...(o.cargas || {}) } };
+    return {
+      ...base, ...o,
+      cfg: { ...base.cfg, ...(o.cfg || {}) },
+      inv: { ...base.inv, ...(o.inv || {}) },
+      cargas: { ...base.cargas, ...(o.cargas || {}) },
+      falhas: { ...(o.falhas || {}) }, resets: { ...(o.resets || {}) },
+      esquema: { ...(o.esquema || {}) }, progAlt: { ...(o.progAlt || {}) }
+    };
   } catch (e) { return estadoNovo(); }
 }
 function salvar() { try { store.setItem(CHAVE, JSON.stringify(st)); } catch (e) { toast('Não consegui salvar neste navegador'); } }
@@ -480,6 +506,47 @@ function anilhasUsadas(lado, imp) {
   return o;
 }
 
+/* ---------- 3b. PROGRESSÃO ALTERNATIVA (teto de equipamento) ---------- */
+function alt(id) { return st.progAlt[id] || { reps: 0, tecnica: 0 }; }
+function alvoReps(id) { return EX[id].reps + alt(id).reps; }
+function tecnicaDe(id) { return TECNICAS[alt(id).tecnica] || TECNICAS[0]; }
+function esquemaDe(id) { return st.esquema[id] || 'reto'; }
+
+function noTeto(lado, id) { return snap(lado + incremento(id), EX[id].imp) === lado; }
+
+function proximoAlt(id) {
+  const p = alt(id);
+  if (p.reps < REPS_EXTRA_MAX) return { tipo: 'reps', texto: (alvoReps(id) + 1) + ' repetições por série' };
+  if (p.tecnica < TECNICAS.length - 1) return { tipo: 'tecnica', texto: TECNICAS[p.tecnica + 1].n };
+  return { tipo: 'nada', texto: 'variação mais difícil do exercício — o app já esgotou carga, reps e técnica' };
+}
+function avancarAlt(id) {
+  const p = { ...alt(id) };
+  if (p.reps < REPS_EXTRA_MAX) p.reps++;
+  else if (p.tecnica < TECNICAS.length - 1) { p.tecnica++; p.reps = 0; }
+  st.progAlt[id] = p;
+  return p;
+}
+
+/* ---------- 3c. REENTRADA APÓS PAUSA ---------- */
+function diasParado() {
+  if (!st.hist.length) return 0;
+  return Math.floor((Date.now() - new Date(st.hist[0].data).getTime()) / 86400000);
+}
+function checarReentrada() {
+  if (st.reentrada) return st.reentrada;
+  const d = diasParado();
+  if (d <= DIAS_DESTREINO || !st.hist.length) return null;
+  const r = RAMPAS.find(x => d <= x.ate);
+  st.reentrada = { dias: d, etapas: r.etapas.slice(), i: 0 };
+  if (d > 45) { st.sessoesCiclo = 0; st.semanaManual = 0; }
+  salvar();
+  return st.reentrada;
+}
+function fatorReentrada() {
+  return st.reentrada ? st.reentrada.etapas[st.reentrada.i] : 1;
+}
+
 /* ---------- 4. CICLO E PERIODIZAÇÃO ---------- */
 function semana() {
   if (st.semanaManual) return st.semanaManual;
@@ -491,8 +558,10 @@ function faseTexto() {
   return s === 1 ? 'Adaptação' : s === 4 ? 'Deload' : 'Progressão linear';
 }
 function cargaPrescrita(id) {
-  const base = st.cargas[id];
-  if (ehDeload()) return snap(base * (st.cfg.deload / 100), EX[id].imp);
+  let base = st.cargas[id];
+  const fr = fatorReentrada();
+  if (fr < 1) base = base * fr;
+  if (ehDeload()) base = base * (st.cfg.deload / 100);
   return snap(base, EX[id].imp);
 }
 function incremento(id) { return INC[EX[id].grupo]; }
@@ -501,26 +570,34 @@ function incremento(id) { return INC[EX[id].grupo]; }
 function seriesAquecimento(id, lado) {
   const e = EX[id];
   const a = [
-    { lado: 0, reps: e.reps + 3, nota: (e.imp === 'halteres' ? 'halteres vazios' : 'barra vazia') + ', pausa de 2 s no ponto de maior alongamento' },
-    { lado: snap(lado * 0.5, e.imp), reps: e.reps, nota: 'metade da carga, amplitude máxima e sem pressa' }
+    { lado: 0, reps: alvoReps(id) + 3, nota: (e.imp === 'halteres' ? 'halteres vazios' : 'barra vazia') + ', pausa de 2 s no ponto de maior alongamento' },
+    { lado: snap(lado * 0.5, e.imp), reps: alvoReps(id), nota: 'metade da carga, amplitude máxima e sem pressa' }
   ];
   return a.filter((s, i) => i === 0 || s.lado > 0);
 }
 
 /* ---------- 6. SESSÃO ---------- */
+function ladoDaSerie(id, ladoTopo, n) {
+  return (esquemaDe(id) === 'backoff' && n > 1) ? snap(ladoTopo * 0.9, EX[id].imp) : ladoTopo;
+}
+
 function novaSessao(tipo) {
+  checarReentrada();
   const t = TREINOS[tipo];
   sess = {
     tipo, data: new Date().toISOString(), inicio: Date.now(),
     semana: semana(), ciclo: st.ciclo, deload: ehDeload(),
+    reentrada: !!st.reentrada, fatorRe: fatorReentrada(),
     fase: 'aquecimento', check: AQUECIMENTO.map(() => false), idx: 0,
     ex: t.ex.map(id => {
       const lado = cargaPrescrita(id);
       return {
         id, ladoInicial: lado, lado, aquec: seriesAquecimento(id, lado),
         aquecFeito: [false, false], ajuste: null,
+        esquema: esquemaDe(id), alvo: alvoReps(id), tecnica: alt(id).tecnica,
         series: Array.from({ length: EX[id].series }, (_, i) => ({
-          n: i + 1, lado, reps: null, fb: null, rpe: null, descanso: null, feita: false
+          n: i + 1, lado: ladoDaSerie(id, lado, i + 1), reps: null, fb: null,
+          rpe: null, descanso: null, feita: false
         })),
         s: 0, fim: false
       };
@@ -556,7 +633,7 @@ function aplicarFeedback(exS, serie, fb) {
   }
   if (novo !== exS.lado) {
     exS.lado = novo;
-    exS.series.forEach(s => { if (!s.feita) s.lado = novo; });
+    exS.series.forEach(s => { if (!s.feita) s.lado = ladoDaSerie(id, novo, s.n); });
     exS.ajuste = { fb, de: de, para: novo };
   } else if (fb === 'Boa') {
     exS.ajuste = { fb, de: de, para: de };
@@ -566,33 +643,75 @@ function aplicarFeedback(exS, serie, fb) {
 }
 
 /* carga a gravar para a próxima sessão */
+function sessaoBemSucedida(exS) {
+  const alvo = exS.alvo != null ? exS.alvo : alvoReps(exS.id);
+  const feitas = exS.series.filter(s => s.feita);
+  return feitas.length === exS.series.length
+    && feitas.every(s => s.reps >= (s.n > 1 && exS.esquema === 'backoff' ? alvo : alvo))
+    && !feitas.some(s => s.fb === 'Pesada');
+}
+
 function proximaCarga(exS) {
   const id = exS.id, e = EX[id], inc = incremento(id);
-  const base = st.cargas[id];
-  if (sess.deload) return { valor: base, motivo: 'Semana de deload não altera a carga de trabalho' };
+  if (sess.deload) return { valor: st.cargas[id], motivo: 'Semana de deload não altera a carga de trabalho' };
+  if (sess.reentrada) return { valor: st.cargas[id], motivo: 'Sessão de reentrada não altera a carga de trabalho' };
 
   const fb1 = exS.series[0].fb;
-  const todas = exS.series.every(s => s.feita && s.reps >= EX[id].reps);
+  const sucesso = sessaoBemSucedida(exS);
   const algumaPesada = exS.series.some(s => s.fb === 'Pesada');
+  const falhasSeguidas = (st.falhas[id] || 0) + (sucesso ? 0 : 1);
 
+  /* 1. estagnação tem prioridade sobre tudo */
+  if (!sucesso && falhasSeguidas >= LIMIAR_ESTAGNACAO) {
+    const v = snap(exS.lado * RESET_ESTAGNACAO, e.imp);
+    const trocaEsquema = (st.resets[id] || 0) + 1 >= 2 && esquemaDe(id) === 'reto';
+    return {
+      valor: v < exS.lado ? v : snap(exS.lado - inc, e.imp),
+      motivo: 'Travou duas sessões seguidas. Reset de 10% para reconstruir'
+        + (trocaEsquema ? ' e mudança para séries com backoff (2ª e 3ª a 90%)' : '') + '.',
+      reset: true, trocaEsquema
+    };
+  }
+
+  /* 2. teto de equipamento: progride em repetição ou técnica */
+  if (sucesso && noTeto(exS.lado, id)) {
+    const a = proximoAlt(id);
+    return {
+      valor: exS.lado,
+      motivo: a.tipo === 'nada'
+        ? 'Teto do equipamento em carga, reps e técnica: ' + a.texto
+        : 'Teto do equipamento. A progressão passa para ' + a.texto + '.',
+      teto: a.tipo !== 'nada', tipoAlt: a.tipo
+    };
+  }
+
+  /* 3. autorregulação normal */
   if (fb1 === 'Baixa') return { valor: exS.lado, motivo: 'Primeira série leve — carga já subiu na sessão' };
   if (fb1 === 'Pesada') return { valor: exS.lado, motivo: 'Primeira série no limite — carga reduzida' };
-  if (fb1 === 'Boa' && todas && !algumaPesada) {
+  if (sucesso) {
     const v = snap(exS.lado + inc, e.imp);
-    return { valor: v, motivo: v > exS.lado ? 'Três séries completas com técnica boa — sobe ' + inc + ' kg/lado' : 'Estoque de anilhas no limite — mantém' };
+    return { valor: v, motivo: 'Alvo fechado com técnica boa — sobe ' + inc + ' kg/lado' };
   }
-  if (fb1 === 'Boa' && algumaPesada) return { valor: exS.lado, motivo: 'Última série no limite — repete a carga' };
-  return { valor: exS.lado, motivo: 'Repetições abaixo do alvo — repete a carga' };
+  if (algumaPesada) return { valor: exS.lado, motivo: 'Última série no limite — repete a carga' };
+  return {
+    valor: exS.lado,
+    motivo: 'Repetições abaixo do alvo — repete a carga'
+      + (falhasSeguidas === 1 ? '. Se travar de novo, cai 10%.' : '')
+  };
 }
 
 function encerrarSessao(aceites) {
+  /* decisões calculadas ANTES de mexer nos contadores */
+  const decisoes = sess.ex.map(x => ({ x, sug: proximaCarga(x), sucesso: sessaoBemSucedida(x) }));
+  const avisos = [];
+
   const reg = {
     id: 'S' + Date.now(), data: sess.data, tipo: sess.tipo, ciclo: sess.ciclo,
-    semana: sess.semana, deload: sess.deload,
+    semana: sess.semana, deload: sess.deload, reentrada: !!sess.reentrada,
     duracao: Math.round((Date.now() - sess.inicio) / 1000),
     ex: sess.ex.map(x => ({
       id: x.id, ladoInicial: x.ladoInicial, ladoFinal: x.lado,
-      imp: EX[x.id].imp,
+      imp: EX[x.id].imp, alvo: x.alvo, tecnica: x.tecnica || 0, esquema: x.esquema || 'reto',
       series: x.series.filter(s => s.feita).map(s => ({
         n: s.n, lado: s.lado, total: pesoTotal(s.lado, EX[x.id].imp),
         implemento: pesoImplemento(s.lado, EX[x.id].imp),
@@ -604,17 +723,48 @@ function encerrarSessao(aceites) {
     a + s.total * s.reps * (EX[x.id].unilateral ? 2 : 1), 0), 0);
 
   st.hist.unshift(reg);
-  sess.ex.forEach((x, i) => { if (aceites[i] != null) st.cargas[x.id] = aceites[i]; });
 
-  st.sessoesCiclo++;
-  if (st.sessoesCiclo === 12) st.snapshotS3 = { ...st.cargas };
-  if (st.sessoesCiclo >= 16) {
-    st.ciclo++; st.sessoesCiclo = 0; st.semanaManual = 0;
-    if (st.snapshotS3) st.cargas = { ...st.snapshotS3 };
-    st.snapshotS3 = null;
+  /* sessões de deload e de reentrada não alteram cargas nem contadores */
+  if (!sess.deload && !sess.reentrada) {
+    decisoes.forEach(({ x, sug, sucesso }, i) => {
+      const id = x.id;
+      if (sucesso) st.falhas[id] = 0; else st.falhas[id] = (st.falhas[id] || 0) + 1;
+
+      if (sug.reset) {
+        st.falhas[id] = 0;
+        st.resets[id] = (st.resets[id] || 0) + 1;
+        if (sug.trocaEsquema) {
+          st.esquema[id] = 'backoff'; st.resets[id] = 0;
+          avisos.push(EX[id].nome + ': mudou para séries com backoff');
+        } else avisos.push(EX[id].nome + ': reset de 10% por estagnação');
+      }
+      if (sug.teto) {
+        const p = avancarAlt(id);
+        avisos.push(EX[id].nome + ': teto de carga — agora ' +
+          (sug.tipoAlt === 'reps' ? alvoReps(id) + ' reps por série' : TECNICAS[p.tecnica].n));
+      }
+      if (aceites[i] != null) st.cargas[id] = aceites[i];
+    });
   }
+
+  /* rampa de reentrada avança uma etapa por sessão */
+  if (st.reentrada) {
+    st.reentrada.i++;
+    if (st.reentrada.i >= st.reentrada.etapas.length) { st.reentrada = null; avisos.push('Reentrada concluída — cargas de volta ao normal'); }
+    else avisos.push('Reentrada: próxima sessão a ' + Math.round(st.reentrada.etapas[st.reentrada.i] * 100) + '%');
+  } else {
+    st.sessoesCiclo++;
+    if (st.sessoesCiclo === 12) st.snapshotS3 = { ...st.cargas };
+    if (st.sessoesCiclo >= 16) {
+      st.ciclo++; st.sessoesCiclo = 0; st.semanaManual = 0;
+      if (st.snapshotS3) st.cargas = { ...st.snapshotS3 };
+      st.snapshotS3 = null;
+    }
+  }
+
   st.proximo = sess.tipo === 'A' ? 'B' : 'A';
   salvar(); limparSessao();
+  reg.avisos = avisos;
   return reg;
 }
 
@@ -639,6 +789,86 @@ function serieHistorica(id) {
   return pts;
 }
 
+function indicadores(id) {
+  const e = EX[id], mult = e.unilateral ? 2 : 1;
+  const ss = [];   // uma entrada por sessão em que o exercício foi feito (cronológico)
+  [...st.hist].reverse().forEach(h => {
+    const x = h.ex.find(y => y.id === id);
+    if (!x || !x.series.length) return;
+    const alvo = x.alvo != null ? x.alvo : e.reps;
+    const rpes = x.series.filter(s => s.rpe != null).map(s => s.rpe);
+    const desc = x.series.filter(s => s.descanso).map(s => s.descanso);
+    ss.push({
+      data: h.data, deload: !!h.deload,
+      vol: x.series.reduce((a, s) => a + s.total * s.reps * mult, 0),
+      reps: x.series.reduce((a, s) => a + s.reps, 0), n: x.series.length,
+      topo: Math.max(...x.series.map(s => s.total)),
+      rm: Math.max(...x.series.map(s => epley(s.total, s.reps))),
+      rpes, desc, series: x.series,
+      fechou: x.series.length >= e.series && x.series.every(s => s.reps >= alvo)
+    });
+  });
+  const soma = (a, f) => a.reduce((t, v) => t + f(v), 0);
+  const media = a => a.length ? a.reduce((t, v) => t + v, 0) / a.length : null;
+  const nd = ss.filter(q => !q.deload);   // tendência e taxa de sucesso ignoram o deload
+  const rec = melhor1RM(id);
+  const todasRpe = ss.flatMap(q => q.rpes), todasDesc = ss.flatMap(q => q.desc);
+  const prCarga = ss.reduce((m, q) => q.topo > m.v ? { v: q.topo, d: q.data } : m, { v: 0, d: null });
+  const ult = ss[ss.length - 1], pen = ss[ss.length - 2];
+  const mes = ss.filter(q => Date.now() - new Date(q.data).getTime() <= 28 * 864e5).length;
+  const cargas = nd.flatMap(q => q.series.map(s => s.total));
+  return {
+    ss, n: ss.length, series: soma(ss, q => q.n), reps: soma(ss, q => q.reps),
+    volTotal: soma(ss, q => q.vol), volMedio: media(ss.map(q => q.vol)),
+    volDelta: ult && pen && pen.vol ? (ult.vol / pen.vol - 1) * 100 : null,
+    prCarga, rm: rec,
+    rmDelta: nd.length > 1 && nd[0].rm ? (nd[nd.length - 1].rm / nd[0].rm - 1) * 100 : null,
+    repsMedia: ss.length ? soma(ss, q => q.reps) / soma(ss, q => q.n) : null,
+    rpeMedio: media(todasRpe), descMedio: media(todasDesc),
+    sucesso: nd.length ? nd.filter(q => q.fechou).length / nd.length * 100 : null,
+    intens: rec.valor && cargas.length ? media(cargas) / rec.valor * 100 : null,
+    freq: mes / 4, ultimo: ult ? ult.data : null
+  };
+}
+function graficoVolume(ss) {
+  const W = 320, H = 110, P = { t: 8, r: 10, b: 20, l: 10 };
+  const max = Math.max(...ss.map(q => q.vol)) || 1, bw = (W - P.l - P.r) / ss.length;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+    ${ss.map((q, i) => { const h = q.vol / max * (H - P.t - P.b);
+      return `<rect x="${(P.l + i * bw + bw * .15).toFixed(1)}" y="${(H - P.b - h).toFixed(1)}" width="${(bw * .7).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${q.deload ? '#e0a33c' : '#c2612f'}"/>`; }).join('')}
+    <text x="${P.l}" y="${H - 5}" fill="#98a1ad" font-size="9" font-family="monospace">${dataBR(ss[0].data)}</text>
+    <text x="${W - P.r}" y="${H - 5}" fill="#98a1ad" font-size="9" font-family="monospace" text-anchor="end">${dataBR(ss[ss.length - 1].data)}</text>
+  </svg>`;
+}
+function indicadoresHTML(id) {
+  const k = indicadores(id), e = EX[id];
+  if (!k.n) return `<div class="card"><div class="card-hd"><h2>Indicadores</h2></div>
+    <p class="muted center" style="font-size:13.5px;padding:12px 0">Sem registros de ${e.nome} ainda.</p></div>`;
+  const f = (v, d = 0) => v == null ? '—' : v.toFixed(d).replace('.', ',');
+  const sg = (v, d = 1) => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(d).replace('.', ',');
+  const kg = v => v >= 1000 ? (v / 1000).toFixed(2).replace('.', ',') + '<span style="font-size:12px"> t</span>' : Math.round(v) + '<span style="font-size:12px"> kg</span>';
+  const it = (n, v, t) => `<div class="loaditem"><div class="n">${n}</div><div class="v">${v}</div><div class="t">${t}</div></div>`;
+  const dias = k.ultimo ? Math.round((Date.now() - new Date(k.ultimo).getTime()) / 864e5) : null;
+  return `<div class="card"><div class="card-hd"><h2>Indicadores</h2></div>
+    <div class="loadgrid">
+      ${it('Volume total', kg(k.volTotal), 'carga × reps' + (e.unilateral ? ' × 2 pernas' : ''))}
+      ${it('Volume por sessão', kg(k.volMedio), k.volDelta == null ? 'média' : 'última ' + sg(k.volDelta) + '% vs anterior')}
+      ${it('Maior carga total', k.prCarga.v + '<span style="font-size:12px"> kg</span>', dataBR(k.prCarga.d))}
+      ${it('1RM: variação', sg(k.rmDelta) + '<span style="font-size:12px"> %</span>', 'primeira → última (sem deload)')}
+      ${it('Séries · reps', k.series + ' · ' + k.reps, 'acumulado')}
+      ${it('Reps por série', f(k.repsMedia, 1), 'alvo ' + repsLabel(id))}
+      ${it('Alvo cumprido', f(k.sucesso) + '<span style="font-size:12px"> %</span>', 'sessões com todas as séries no alvo')}
+      ${it('Intensidade média', f(k.intens) + '<span style="font-size:12px"> %</span>', 'da melhor 1RM estimada')}
+      ${it('RPE médio', f(k.rpeMedio, 1), 'esforço percebido')}
+      ${it('Descanso médio', k.descMedio == null ? '—' : mmss(k.descMedio), 'padrão ' + mmss(e.descanso))}
+      ${it('Frequência', f(k.freq, 1) + '<span style="font-size:12px"> /sem</span>', 'últimas 4 semanas')}
+      ${it('Última sessão', dias == null ? '—' : dias + '<span style="font-size:12px"> d</span>', 'atrás')}
+    </div>
+    ${k.n > 1 ? `<div class="divider"></div><div class="eyebrow" style="margin-bottom:6px">Volume por sessão</div>
+      <div class="chartwrap">${graficoVolume(k.ss)}</div>` : ''}
+  </div>`;
+}
+
 /* ---------- 8. UTILIDADES DE UI ---------- */
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
@@ -655,7 +885,15 @@ function diaSemana(iso) {
   return new Date(iso).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function repsLabel(id) { return EX[id].reps + (EX[id].unilateral ? ' por perna' : ''); }
+function repsLabel(id) { return alvoReps(id) + (EX[id].unilateral ? ' por perna' : ''); }
+function selo(id) {
+  const p = alt(id), e = esquemaDe(id), f = st.falhas[id] || 0, tags = [];
+  if (p.tecnica) tags.push(TECNICAS[p.tecnica].n);
+  if (e === 'backoff') tags.push('backoff');
+  if (f >= 1) tags.push(f + (f === 1 ? ' falha' : ' falhas'));
+  if (noTeto(st.cargas[id], id)) tags.push('teto');
+  return tags;
+}
 
 /* ---------- 9. TIMER DE DESCANSO ---------- */
 const T = { fim: 0, dur: 0, on: false, raf: 0, cb: null, inicio: 0 };
@@ -762,6 +1000,22 @@ function renderHome() {
     </div>`;
   }
 
+  if (st.reentrada) {
+    const pct = Math.round(fatorReentrada() * 100);
+    h += `<div class="card"><div class="alert info"><span class="ic">&#8635;</span><div>
+      <b>Reentrada após ${st.reentrada.dias} dias parado.</b> As cargas saem a ${pct}% e sobem
+      ao longo de ${st.reentrada.etapas.length} sessões até voltar ao normal.
+      A carga de trabalho gravada não muda enquanto isso.</div></div></div>`;
+  }
+
+  const semBackup = st.hist.length - (st.backupEm || 0);
+  if (semBackup >= 10) {
+    h += `<div class="card"><div class="alert"><span class="ic">&#8681;</span><div>
+      <b>${semBackup} treinos sem backup.</b> Tudo vive só neste aparelho — limpar os dados do
+      navegador apaga o histórico.
+      <div class="sp"></div><button class="btn sm ghost" data-act="json">Exportar JSON agora</button></div></div></div>`;
+  }
+
   if (ehDeload()) {
     h += `<div class="card"><div class="alert info"><span class="ic">↓</span><div>
       <b>Semana de deload.</b> As cargas caem para ${st.cfg.deload}% e a carga de trabalho gravada não muda.
@@ -773,9 +1027,11 @@ function renderHome() {
     <div class="loadgrid">` +
     Object.keys(EX).map(id => {
       const lado = cargaPrescrita(id), e = EX[id];
+      const tags = selo(id);
       return `<div class="loaditem"><div class="n">${e.nome}</div>
         <div class="v">${lado}<span style="font-size:12px"> kg/lado</span></div>
-        <div class="t">${rotuloCarga(lado, e.imp)} · ${e.series}×${repsLabel(id)}</div></div>`;
+        <div class="t">${rotuloCarga(lado, e.imp)} · ${e.series}×${repsLabel(id)}</div>
+        ${tags.length ? `<div class="t" style="color:var(--boa);margin-top:3px">${tags.join(' · ')}</div>` : ''}</div>`;
     }).join('') + `</div></div>`;
 
   h += `<div class="card"><div class="card-hd"><h2>Ciclo</h2></div>
@@ -842,8 +1098,9 @@ function renderExercicio() {
   const x = sess.ex[sess.idx], e = EX[x.id];
   const serie = x.series[x.s];
   const feitas = x.series.filter(s => s.feita).length;
-  const alvoReps = e.reps;
-  if (sess.reps == null) sess.reps = alvoReps;
+  const alvo = x.alvo != null ? x.alvo : e.reps;
+  const tec = TECNICAS[x.tecnica || 0];
+  if (sess.reps == null) sess.reps = alvo;
 
   const aquecHTML = feitas === 0 ? `
     <div class="eyebrow" style="margin-bottom:2px">Aquecimento no exercício</div>
@@ -853,23 +1110,26 @@ function renderExercicio() {
       <small>${a.nota}</small></div></div>`).join('')}
     <div class="divider"></div>` : '';
 
+  const editando = sess.edit != null;
   const seriesHTML = x.series.map((s, i) => {
+    if (editando && sess.edit === i) return painelEdicao(x, s, i);
     const cls = s.feita ? 'done' : (i === x.s ? 'now' : '');
-    return `<div class="serie ${cls}"><div class="idx">${s.n}</div>
+    return `<div class="serie ${cls}" ${s.feita ? `data-act="editar" data-i="${i}" style="cursor:pointer"` : ''}>
+      <div class="idx">${s.n}</div>
       <div class="meta"><b>${s.lado}</b> kg/lado · ${rotuloCarga(s.lado, e.imp)}
-      ${s.feita ? `<br><span class="muted">${s.reps}${e.unilateral ? '/perna' : ''} reps · RPE ${s.rpe ?? '—'}${s.descanso ? ' · descanso ' + mmss(s.descanso) : ''}</span>` : ''}</div>
+      ${s.feita ? `<br><span class="muted">${s.reps}${e.unilateral ? '/perna' : ''} reps · RPE ${s.rpe ?? '—'}${s.descanso ? ' · descanso ' + mmss(s.descanso) : ''} · <span style="color:var(--oxido-soft)">corrigir</span></span>` : ''}</div>
       ${s.fb ? `<span class="fb ${s.fb}">${s.fb}</span>` : ''}</div>`;
   }).join('');
 
-  const entrada = x.fim ? '' : `
+  const entrada = (x.fim || editando) ? '' : `
     <div class="divider"></div>
     <div class="eyebrow center">Série ${serie.n} — repetições feitas${e.unilateral ? ' por perna' : ''}</div>
     <div class="stepper">
-      <button data-act="reps" data-d="-1">−</button>
+      <button data-act="reps" data-d="-1">&minus;</button>
       <div class="val">${sess.reps}</div>
       <button data-act="reps" data-d="1">+</button>
     </div>
-    <p class="center muted" style="font-size:12px;margin:0 0 14px">alvo: ${alvoReps}${e.unilateral ? ' por perna' : ''}</p>
+    <p class="center muted" style="font-size:12px;margin:0 0 14px">alvo: ${alvo}${e.unilateral ? ' por perna' : ''}</p>
     ${serie.n === 1 ? `
       <div class="eyebrow center" style="margin-bottom:8px">Como foi a série?</div>
       <div class="fbgrid">
@@ -888,30 +1148,40 @@ function renderExercicio() {
 
   const ajusteHTML = x.ajuste && x.ajuste.para !== x.ajuste.de ? `
     <div class="alert ${x.ajuste.fb === 'Pesada' ? '' : 'ok'}" style="margin-bottom:12px">
-      <span class="ic">${x.ajuste.fb === 'Pesada' ? '↓' : '↑'}</span>
+      <span class="ic">${x.ajuste.fb === 'Pesada' ? '\u2193' : '\u2191'}</span>
       <div>Carga ajustada de <b>${x.ajuste.de}</b> para <b>${x.ajuste.para} kg/lado</b>. Troque as anilhas antes da próxima série.</div></div>` : '';
+
+  const modoHTML = [
+    x.tecnica ? `<div class="alert info" style="margin-bottom:12px"><span class="ic">&#9679;</span>
+      <div><b>${tec.n}.</b> ${tec.d} A carga chegou ao teto do equipamento, então a progressão vem daqui.</div></div>` : '',
+    x.esquema === 'backoff' ? `<div class="alert info" style="margin-bottom:12px"><span class="ic">&#9679;</span>
+      <div><b>Séries com backoff.</b> A 1ª série é a pesada; a 2ª e a 3ª saem a 90% para acumular volume sem torrar.</div></div>` : '',
+    sess.reentrada ? `<div class="alert info" style="margin-bottom:12px"><span class="ic">&#8635;</span>
+      <div><b>Reentrada a ${Math.round(sess.fatorRe * 100)}%.</b> Carga reduzida de propósito. Não force o alvo hoje.</div></div>` : ''
+  ].join('');
 
   $('#v-sessao').innerHTML = `
   <div class="card">
-    <div class="eyebrow">${TREINOS[sess.tipo].nome} · exercício ${sess.idx + 1} de ${sess.ex.length}${sess.deload ? ' · deload' : ''}</div>
+    <div class="eyebrow">${TREINOS[sess.tipo].nome} · exercício ${sess.idx + 1} de ${sess.ex.length}${sess.deload ? ' · deload' : ''}${sess.reentrada ? ' · reentrada' : ''}</div>
     <div class="card-hd" style="margin:2px 0 10px"><h2 style="font-size:21px">${e.nome}</h2></div>
     <div class="load">
       <div class="big">${x.lado}<small>kg/lado</small></div>
-      <div class="sub">${rotuloCarga(x.lado, e.imp)}<br>${e.series} × ${repsLabel(x.id)} · descanso ${mmss(e.descanso)}</div>
+      <div class="sub">${rotuloCarga(x.lado, e.imp)}<br>${e.series} × ${alvo}${e.unilateral ? ' por perna' : ''} · descanso ${mmss(e.descanso)}</div>
     </div>
     ${sleeveHTML(x.lado, e.imp)}
     <p class="muted center" style="font-size:12px;margin:6px 0 0">${textoCombo(x.lado, e.imp)}${e.imp === 'halteres' ? ' · em cada ponta dos dois halteres' : ''}</p>
     <div style="display:flex;gap:8px;margin-top:10px;justify-content:center">
-      <button class="btn sm ghost" data-act="carga" data-d="-1">− carga</button>
+      <button class="btn sm ghost" data-act="carga" data-d="-1">&minus; carga</button>
       <button class="btn sm ghost" data-act="carga" data-d="1">+ carga</button>
     </div>
     <div class="divider"></div>
     ${ajusteHTML}
+    ${modoHTML}
     <div class="alert info" style="margin-bottom:12px"><span class="ic">!</span><div>${e.seguranca}</div></div>
     ${aquecHTML}
     ${seriesHTML}
     ${entrada}
-    ${x.fim ? `<div class="divider"></div><button class="btn primary" data-act="proximo">${sess.idx + 1 < sess.ex.length ? 'Próximo exercício' : 'Encerrar e revisar'}</button>` : ''}
+    ${x.fim && !editando ? `<div class="divider"></div><button class="btn primary" data-act="proximo">${sess.idx + 1 < sess.ex.length ? 'Próximo exercício' : 'Encerrar e revisar'}</button>` : ''}
     <details><summary>Técnica</summary><ol>${e.tecnica.map(t => '<li>' + t + '</li>').join('')}</ol>
       <p style="margin-top:10px"><a href="https://www.youtube.com/results?search_query=${encodeURIComponent(e.nome + ' técnica execução')}" target="_blank" rel="noopener">Ver demonstrações em vídeo &rarr;</a></p>
     </details>
@@ -919,15 +1189,41 @@ function renderExercicio() {
   <button class="btn ghost sm" style="width:100%" data-act="cancelar">Cancelar treino</button>`;
 }
 
+function painelEdicao(x, s, i) {
+  const e = EX[x.id];
+  return `<div style="background:var(--iron-700);border-radius:8px;padding:14px;margin:8px -4px">
+    <div class="eyebrow center">Corrigir série ${s.n}</div>
+    <div class="stepper">
+      <button data-act="reps-edit" data-d="-1">&minus;</button>
+      <div class="val">${sess.repsEdit}</div>
+      <button data-act="reps-edit" data-d="1">+</button>
+    </div>
+    <p class="center muted" style="font-size:12px;margin:0 0 12px">repetições${e.unilateral ? ' por perna' : ''} · carga ${s.lado} kg/lado</p>
+    <div class="eyebrow center" style="margin-bottom:8px">Feedback</div>
+    <div class="fbgrid">
+      ${['Baixa', 'Boa', 'Pesada'].map(f => `<button class="fbbtn" data-act="fb-edit" data-f="${f}"
+        style="${sess.fbEdit === f ? 'border-color:var(--oxido);background:var(--iron-600)' : ''}"><b>${f}</b></button>`).join('')}
+    </div>
+    ${s.n === 1 ? '<p class="center muted" style="font-size:11.5px;margin:10px 0 0">Mudar o feedback da 1ª série recalcula a carga das séries que ainda não foram feitas.</p>' : ''}
+    <div class="sp"></div>
+    <div class="btn-row">
+      <button class="btn ghost" data-act="cancelar-edicao">Cancelar</button>
+      <button class="btn primary" data-act="salvar-edicao">Salvar correção</button>
+    </div>
+  </div>`;
+}
+
 function renderResumo() {
   const sugest = sess.ex.map(x => proximaCarga(x));
   sess.aceite = sess.aceite || sugest.map(s => s.valor);
+  const reentrada = sess.reentrada, deload = sess.deload;
   const dur = Math.round((Date.now() - sess.inicio) / 1000);
   $('#v-sessao').innerHTML = `
   <div class="card">
     <div class="eyebrow">${TREINOS[sess.tipo].nome} concluído</div>
     <div class="card-hd" style="margin:2px 0 10px"><h2 style="font-size:20px">${mmss(dur)} de treino</h2></div>
     ${dur > 3600 ? '<div class="alert info"><span class="ic">!</span><div>Passou de 1 hora. Corte conversa entre séries ou reduza 15 s de descanso nos acessórios.</div></div><div class="sp"></div>' : ''}
+    ${(reentrada || deload) ? `<div class="alert info"><span class="ic">&#9679;</span><div>Sessão de ${reentrada ? 'reentrada' : 'deload'}: a carga de trabalho gravada não muda.</div></div><div class="sp"></div>` : ''}
     ${sess.ex.map((x, i) => {
     const e = EX[x.id], s = sugest[i], feitas = x.series.filter(f => f.feita);
     return `<div style="padding:12px 0;border-bottom:1px solid var(--line)">
@@ -937,7 +1233,8 @@ function renderResumo() {
         <div class="muted" style="font-size:12.5px;margin-top:3px">
           ${x.ladoInicial} &rarr; ${x.lado} kg/lado · 1RM estimado ${feitas.length ? Math.round(Math.max(...feitas.map(f => epley(pesoTotal(f.lado, e.imp), f.reps)))) + ' kg' : '—'}</div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
-          <div style="flex:1;font-size:12.5px">Próxima sessão: <b class="num">${sess.aceite[i]} kg/lado</b><br><span class="muted" style="font-size:11.5px">${s.motivo}</span></div>
+          <div style="flex:1;font-size:12.5px">Próxima sessão: <b class="num">${sess.aceite[i]} kg/lado</b><br>
+            <span style="font-size:11.5px;color:${s.reset || s.teto ? 'var(--boa)' : 'var(--cal-dim)'}">${s.motivo}</span></div>
           <button class="btn sm ghost" data-act="sug" data-i="${i}" data-d="-1">−</button>
           <button class="btn sm ghost" data-act="sug" data-i="${i}" data-d="1">+</button>
         </div></div>`;
@@ -996,11 +1293,13 @@ function renderGraf() {
         <div class="loaditem"><div class="n">Ganho no período</div><div class="v">${pts.length > 1 ? (pts[pts.length - 1].carga - pts[0].carga >= 0 ? '+' : '') + (pts[pts.length - 1].carga - pts[0].carga) : '—'}<span style="font-size:12px"> kg</span></div><div class="t">carga total na barra</div></div>
       </div>
     </div>
+    ${indicadoresHTML(sel)}
     <div class="card"><div class="card-hd"><h2>Todos os exercícios</h2></div>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
       ${ids.map(i => { const r = melhor1RM(i); return `<tr><td style="padding:7px 0;border-bottom:1px solid var(--line)">${EX[i].nome}</td>
         <td class="num" style="text-align:right;padding:7px 0;border-bottom:1px solid var(--line)">${st.cargas[i]} kg/lado</td>
-        <td class="num muted" style="text-align:right;padding:7px 0 7px 12px;border-bottom:1px solid var(--line)">${r.valor ? Math.round(r.valor) + ' kg 1RM' : '—'}</td></tr>`; }).join('')}
+        <td class="num muted" style="text-align:right;padding:7px 0 7px 12px;border-bottom:1px solid var(--line)">${r.valor ? Math.round(r.valor) + ' kg 1RM' : '—'}</td>
+        <td class="num muted" style="text-align:right;padding:7px 0 7px 12px;border-bottom:1px solid var(--line)">${(indicadores(i).volTotal / 1000).toFixed(2).replace('.', ',')} t</td></tr>`; }).join('')}
       </table></div>`;
 }
 
@@ -1061,6 +1360,22 @@ function renderAjustes() {
       <option value="B" ${st.proximo === 'B' ? 'selected' : ''}>Treino B</option></select></div>
   </div>
 
+  <div class="card"><div class="card-hd"><h2>Progressão</h2></div>
+    ${Object.keys(EX).map(id => {
+      const p = alt(id), tags = selo(id);
+      return `<div class="field"><label>${EX[id].nome}
+        <small>${alvoReps(id)} reps · ${TECNICAS[p.tecnica].n} · ${esquemaDe(id) === 'backoff' ? 'backoff' : 'séries retas'}${tags.length ? ' · ' + tags.join(', ') : ''}</small></label>
+        <button class="btn sm ghost" data-act="zerar-prog" data-id="${id}">Zerar</button></div>`;
+    }).join('')}
+    <p class="muted" style="font-size:12.5px;margin:12px 0 0">Quando a carga chega ao teto das anilhas, a progressão passa para repetições
+      (até +${REPS_EXTRA_MAX}) e depois para técnica: ${TECNICAS.slice(1).map(t => t.n).join(' &rarr; ')}.
+      Duas sessões seguidas sem fechar o alvo disparam reset de 10%; dois resets trocam o esquema para backoff.</p>
+  </div>
+
+  ${st.reentrada ? `<div class="card"><div class="card-hd"><h2>Reentrada</h2></div>
+    <p class="muted" style="font-size:13.5px;margin:0 0 10px">Etapa ${st.reentrada.i + 1} de ${st.reentrada.etapas.length} · cargas a ${Math.round(fatorReentrada() * 100)}% após ${st.reentrada.dias} dias parado.</p>
+    <button class="btn ghost sm" data-act="cancelar-reentrada">Cancelar rampa e voltar a 100%</button></div>` : ''}
+
   <div class="card"><div class="card-hd"><h2>Timer e avisos</h2></div>
     <div class="field"><label>Timer automático<small>abre ao registrar cada série</small></label>
       <input type="checkbox" ${st.cfg.autoTimer ? 'checked' : ''} data-cfg-bool="autoTimer"></div>
@@ -1081,7 +1396,9 @@ function renderAjustes() {
     <button class="btn ghost" id="btnInstalar" style="display:none" data-act="instalar">Instalar o app no celular</button>
     <div class="sp"></div>
     <button class="btn ghost" data-act="zerar" style="color:var(--pesada)">Apagar tudo e recomeçar</button>
-    <p class="muted" style="font-size:12px;margin:12px 0 0">Tudo fica salvo só neste aparelho. Exporte o JSON de vez em quando se não quiser perder o histórico.</p>
+    <p class="muted" style="font-size:12px;margin:12px 0 0">Tudo fica salvo só neste aparelho.
+      ${st.backupEm ? 'Último backup com ' + st.backupEm + ' treino(s) exportado(s); ' + (st.hist.length - st.backupEm) + ' desde então.' : 'Nenhum backup exportado ainda.'}
+      O app avisa a cada 10 treinos sem backup.</p>
   </div>`;
   if (deferredPrompt) $('#btnInstalar').style.display = '';
 }
@@ -1092,7 +1409,7 @@ let deferredPrompt = null;
 function estimaRPE(x, s) {
   const fb1 = x.series[0].fb, base = fb1 ? RPE_FB[fb1] : 8;
   let r = base + 0.5 * (s.n - 1);
-  if (s.reps < EX[x.id].reps) r += 1;
+  if (s.reps < (x.alvo != null ? x.alvo : EX[x.id].reps)) r += 1;
   return Math.min(10, Math.round(r * 2) / 2);
 }
 
@@ -1110,10 +1427,31 @@ function registrarSerie(fb) {
     : 'A seguir: <b>série ' + (s.n + 1) + '</b> de ' + e.nome + ' com <b>' + x.series[x.s + 1].lado + ' kg por lado</b>';
 
   if (ultima) { x.fim = true; sess.reps = null; }
-  else { x.s++; sess.reps = e.reps; }
+  else { x.s++; sess.reps = x.alvo != null ? x.alvo : e.reps; }
   salvarSessao(); render();
 
   descansar(e.descanso, proxTxt, usado => { s.descanso = usado; salvarSessao(); render(); });
+}
+
+function salvarEdicao() {
+  const x = sess.ex[sess.idx], i = sess.edit, s = x.series[i];
+  const fbAntigo = s.fb;
+  s.reps = sess.repsEdit;
+  s.fb = sess.fbEdit || null;
+
+  /* mudou o feedback da 1ª série: refaz a autorregulação do zero */
+  if (i === 0 && s.fb !== fbAntigo) {
+    x.lado = x.ladoInicial;
+    x.ajuste = null;
+    x.series.forEach(o => { if (!o.feita) o.lado = ladoDaSerie(x.id, x.lado, o.n); });
+    s.rpe = null;
+    if (s.fb) { const m = aplicarFeedback(x, s, s.fb); if (m) toast(m); }
+  }
+  s.rpe = s.fb ? RPE_FB[s.fb] : estimaRPE(x, s);
+
+  sess.edit = null; sess.repsEdit = null; sess.fbEdit = null;
+  salvarSessao(); render();
+  toast('Série ' + s.n + ' corrigida');
 }
 
 document.addEventListener('click', ev => {
@@ -1126,11 +1464,12 @@ document.addEventListener('click', ev => {
     return;
   }
   if (a === 'ir-sessao') return ir('sessao');
-  if (!sess && ['check', 'fase-ex', 'aq', 'reps', 'carga', 'fb', 'registrar', 'proximo', 'sug', 'salvar-sessao', 'cancelar'].includes(a)) return;
+  if (!sess && ['check', 'fase-ex', 'aq', 'reps', 'carga', 'fb', 'registrar', 'proximo', 'sug', 'salvar-sessao', 'cancelar', 'editar', 'salvar-edicao',
+    'cancelar-edicao', 'reps-edit', 'fb-edit'].includes(a)) return;
 
   switch (a) {
     case 'check': sess.check[+el.dataset.i] = !sess.check[+el.dataset.i]; salvarSessao(); render(); break;
-    case 'fase-ex': sess.fase = 'exercicios'; sess.reps = EX[sess.ex[0].id].reps; salvarSessao(); render(); break;
+    case 'fase-ex': sess.fase = 'exercicios'; sess.reps = sess.ex[0].alvo; salvarSessao(); render(); break;
     case 'aq': { const i = +el.dataset.i; const x = sess.ex[sess.idx]; x.aquecFeito[i] = !x.aquecFeito[i]; salvarSessao(); render(); break; }
     case 'reps': {
       const e = EX[sess.ex[sess.idx].id];
@@ -1145,10 +1484,34 @@ document.addEventListener('click', ev => {
       x.lado = novo; x.series.forEach(s => { if (!s.feita) s.lado = novo; });
       salvarSessao(); render(); break;
     }
+    case 'editar': {
+      const i = +el.dataset.i, s0 = sess.ex[sess.idx].series[i];
+      sess.edit = i; sess.repsEdit = s0.reps; sess.fbEdit = s0.fb;
+      salvarSessao(); render(); break;
+    }
+    case 'reps-edit':
+      sess.repsEdit = Math.max(0, Math.min(30, sess.repsEdit + (+el.dataset.d)));
+      salvarSessao(); render(); break;
+    case 'fb-edit':
+      sess.fbEdit = sess.fbEdit === el.dataset.f ? null : el.dataset.f;
+      salvarSessao(); render(); break;
+    case 'cancelar-edicao':
+      sess.edit = null; sess.repsEdit = null; sess.fbEdit = null; salvarSessao(); render(); break;
+    case 'salvar-edicao': salvarEdicao(); break;
+    case 'zerar-prog': {
+      const id = el.dataset.id;
+      st.progAlt[id] = { reps: 0, tecnica: 0 };
+      st.esquema[id] = 'reto'; st.falhas[id] = 0; st.resets[id] = 0;
+      salvar(); render(); toast(EX[id].nome + ': progressão zerada');
+      break;
+    }
+    case 'cancelar-reentrada':
+      st.reentrada = null; salvar(); render(); toast('Rampa cancelada — cargas a 100%');
+      break;
     case 'fb': registrarSerie(el.dataset.f); break;
     case 'registrar': registrarSerie(el.dataset.f || null); break;
     case 'proximo':
-      if (sess.idx + 1 < sess.ex.length) { sess.idx++; sess.reps = EX[sess.ex[sess.idx].id].reps; }
+      if (sess.idx + 1 < sess.ex.length) { sess.idx++; sess.reps = sess.ex[sess.idx].alvo; }
       else sess.fase = 'resumo';
       salvarSessao(); render(); break;
     case 'sug': {
@@ -1159,7 +1522,10 @@ document.addEventListener('click', ev => {
     }
     case 'salvar-sessao': {
       const r = encerrarSessao(sess.aceite);
-      toast('Treino salvo · ' + (r.tonelagem / 1000).toFixed(1) + ' t');
+      toast(r.avisos && r.avisos.length
+        ? r.avisos[0]
+        : 'Treino salvo · ' + (r.tonelagem / 1000).toFixed(1) + ' t');
+      if (r.avisos && r.avisos.length > 1) setTimeout(() => toast(r.avisos[1]), 3000);
       ir('home'); break;
     }
     case 'cancelar':
@@ -1252,6 +1618,7 @@ function exportarCSV() {
   baixar('forja-treinos-' + new Date().toISOString().slice(0, 10) + '.csv', '\uFEFF' + linhas.join('\n'), 'text/csv;charset=utf-8');
 }
 function exportarJSON() {
+  st.backupEm = st.hist.length; salvar();
   baixar('forja-backup-' + new Date().toISOString().slice(0, 10) + '.json', JSON.stringify(st, null, 2), 'application/json');
 }
 
@@ -1266,6 +1633,7 @@ window.addEventListener('beforeunload', e => { if (sess && sess.fase === 'exerci
 
 st = carregar();
 aplicaDescansos();
+checarReentrada();
 retomarSessao();
 if (sess) { ir('sessao'); } else { ir('home'); }
 salvar();
