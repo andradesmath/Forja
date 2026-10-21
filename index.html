@@ -9,6 +9,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 /* ============================================================
@@ -289,6 +290,9 @@ details li b{color:var(--cal)}
 const ANILHAS = [10, 5, 3, 2];
 const INV_PADRAO = { 10: 4, 5: 8, 3: 4, 2: 4 };
 const INC = { superior: 2, inferior: 3 };   // kg por lado
+/* ciclo de 3 meses = 12 semanas = 3 blocos de 4 semanas; deload no fim de cada bloco */
+const SESS_SEMANA = 4, SEMANAS_CICLO = 12, SESS_CICLO = SESS_SEMANA * SEMANAS_CICLO;
+const DELOADS = [4, 8, 12];
 const RPE_FB = { Baixa: 7, Boa: 8.5, Pesada: 10 };
 const REPS_EXTRA_MAX = 3;          // repetições extras antes de trocar de técnica
 const LIMIAR_ESTAGNACAO = 2;       // sessões seguidas sem fechar o alvo
@@ -406,7 +410,7 @@ const AQUECIMENTO = [
 /* ---------- 2. ESTADO ---------- */
 const CFG_PADRAO = {
   barraLonga: 10, barraCurta: 2, halterVazio: 2,
-  deload: 65, som: true, vibrar: true, autoTimer: true, tempoSerie: 40
+  deload: 65, som: true, vibrar: true, autoTimer: true, tempoSerie: 40, alarme: true, notificar: true
 };
 
 const store = (() => {
@@ -429,7 +433,7 @@ function estadoNovo() {
   return {
     v: 2, cfg: { ...CFG_PADRAO }, inv: { ...INV_PADRAO },
     cargas, ciclo: 1, sessoesCiclo: 0, semanaManual: 0,
-    proximo: 'A', snapshotS3: null, hist: [],
+    proximo: 'A', snapshotS3: null, cicloInicio: null, hist: [],
     falhas: {}, resets: {}, esquema: {}, progAlt: {},
     reentrada: null, backupEm: 0
   };
@@ -550,12 +554,24 @@ function fatorReentrada() {
 /* ---------- 4. CICLO E PERIODIZAÇÃO ---------- */
 function semana() {
   if (st.semanaManual) return st.semanaManual;
-  return Math.min(4, Math.floor(st.sessoesCiclo / 4) + 1);
+  return Math.min(SEMANAS_CICLO, Math.floor(st.sessoesCiclo / SESS_SEMANA) + 1);
 }
-function ehDeload() { return semana() === 4; }
+function ehDeload() { return DELOADS.includes(semana()); }
+function bloco() { return Math.ceil(semana() / 4); }
 function faseTexto() {
   const s = semana();
-  return s === 1 ? 'Adaptação' : s === 4 ? 'Deload' : 'Progressão linear';
+  return DELOADS.includes(s) ? 'Deload' : s === 1 ? 'Adaptação' : 'Progressão linear';
+}
+function cicloInicioData() {   // data da 1ª sessão do ciclo atual (também para ciclos já em andamento)
+  if (st.cicloInicio) return st.cicloInicio;
+  const hs = st.hist.filter(h => h.ciclo === st.ciclo && !h.reentrada).map(h => h.data).sort();
+  return hs[0] || null;
+}
+function fimCiclo(iso) { const d = new Date(iso); d.setMonth(d.getMonth() + 3); return d; }
+function ritmoCiclo() {   // sessões feitas menos sessões previstas a 4/semana desde o início
+  const ini = cicloInicioData(); if (!ini) return null;
+  const prev = Math.min(SESS_CICLO, Math.floor((Date.now() - new Date(ini).getTime()) / (7 * 864e5) * SESS_SEMANA));
+  return st.sessoesCiclo - prev;
 }
 function cargaPrescrita(id) {
   let base = st.cargas[id];
@@ -606,7 +622,7 @@ function novaSessao(tipo) {
   salvarSessao();
 }
 function salvarSessao() { try { store.setItem('forja.sess', JSON.stringify(sess)); } catch (e) { } }
-function limparSessao() { sess = null; try { store.removeItem('forja.sess'); } catch (e) { } }
+function limparSessao() { soltarTela(); sess = null; try { store.removeItem('forja.sess'); } catch (e) { } }
 function retomarSessao() {
   try { const r = store.getItem('forja.sess'); if (r) sess = JSON.parse(r); } catch (e) { }
 }
@@ -753,10 +769,12 @@ function encerrarSessao(aceites) {
     if (st.reentrada.i >= st.reentrada.etapas.length) { st.reentrada = null; avisos.push('Reentrada concluída — cargas de volta ao normal'); }
     else avisos.push('Reentrada: próxima sessão a ' + Math.round(st.reentrada.etapas[st.reentrada.i] * 100) + '%');
   } else {
+    if (!st.cicloInicio) st.cicloInicio = cicloInicioData() || sess.data;
     st.sessoesCiclo++;
-    if (st.sessoesCiclo === 12) st.snapshotS3 = { ...st.cargas };
-    if (st.sessoesCiclo >= 16) {
-      st.ciclo++; st.sessoesCiclo = 0; st.semanaManual = 0;
+    /* foto das cargas ao fim da última semana de progressão (antes do deload final) */
+    if (st.sessoesCiclo === SESS_CICLO - SESS_SEMANA) st.snapshotS3 = { ...st.cargas };
+    if (st.sessoesCiclo >= SESS_CICLO) {
+      st.ciclo++; st.sessoesCiclo = 0; st.semanaManual = 0; st.cicloInicio = null;
       if (st.snapshotS3) st.cargas = { ...st.snapshotS3 };
       st.snapshotS3 = null;
     }
@@ -901,7 +919,7 @@ let ac = null;
 function beep(freq, dur) {
   if (!st.cfg.som) return;
   try {
-    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx()) return;
     const o = ac.createOscillator(), g = ac.createGain();
     o.connect(g); g.connect(ac.destination);
     o.frequency.value = freq; o.type = 'sine';
@@ -913,13 +931,79 @@ function beep(freq, dur) {
 }
 function vibrar(p) { if (st.cfg.vibrar && navigator.vibrate) try { navigator.vibrate(p); } catch (e) { } }
 
+/* ---------- alarme, notificação e tela ligada ---------- */
+let alarmeIv = null, wl = null;
+function audioCtx() {   // criado/retomado dentro de um toque do usuário (exigência do navegador)
+  try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch (e) { }
+  return ac;
+}
+function tocarAlarme() {
+  pararAlarme();
+  if (!st.cfg.alarme) { beep(880, .35); vibrar([120, 60, 120]); return; }
+  let n = 0;
+  const ciclo = () => {
+    if (++n > 40) return pararAlarme();          // ~36 s no máximo
+    beep(880, .25); setTimeout(() => beep(1175, .25), 300);
+    vibrar([300, 150, 300]);
+  };
+  ciclo(); alarmeIv = setInterval(ciclo, 900);
+}
+function pararAlarme() {
+  if (alarmeIv) { clearInterval(alarmeIv); alarmeIv = null; }
+  try { navigator.vibrate && navigator.vibrate(0); } catch (e) { }
+}
+async function notificar(titulo, corpo) {
+  if (!st.cfg.notificar || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const op = { body: corpo, tag: 'forja-descanso', renotify: true, requireInteraction: true,
+    vibrate: [300, 150, 300, 150, 300], icon: 'icon-192.png', badge: 'icon-192.png' };
+  try {
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (reg) await reg.showNotification(titulo, op); else new Notification(titulo, op);
+  } catch (e) { }
+}
+async function pedirNotificacao() {
+  if (!('Notification' in window)) { toast('Este navegador não suporta notificações'); return; }
+  let r = Notification.permission;
+  try { if (r !== 'granted') r = await Notification.requestPermission(); } catch (e) { }
+  if (r === 'granted') { st.cfg.notificar = true; salvar(); toast('Notificações ativadas'); notificar('FORJA', 'Notificações ativadas.'); }
+  else toast('Permissão negada — libere nas configurações do navegador');
+  render();
+}
+function agendarSW(on) {   // reserva: o service worker avisa se a página for suspensa em segundo plano
+  try {
+    const c = navigator.serviceWorker && navigator.serviceWorker.controller;
+    if (c) c.postMessage(on ? { tipo: 'agendar', fim: T.fim } : { tipo: 'cancelar' });
+  } catch (e) { }
+}
+async function manterTela() {
+  try {
+    if (!navigator.wakeLock || wl) return;
+    wl = await navigator.wakeLock.request('screen');
+    wl.addEventListener('release', () => { wl = null; });
+  } catch (e) { wl = null; }
+}
+function soltarTela() { try { wl && wl.release(); } catch (e) { } wl = null; }
+function fimDescanso() {
+  tocarAlarme();
+  if (document.hidden) notificar('FORJA · descanso acabou', 'Hora da próxima série.');
+  agendarSW(false);
+}
+document.addEventListener('visibilitychange', () => {
+  /* o navegador solta a trava de tela ao ocultar o app; religa ao voltar */
+  if (!document.hidden && (sess || T.on)) { manterTela(); if (T.on) tickTimer(); }
+});
+
 function descansar(seg, texto, cb) {
   if (!st.cfg.autoTimer) { cb && cb(seg); return; }
   T.dur = seg; T.inicio = Date.now(); T.fim = Date.now() + seg * 1000; T.on = true; T.cb = cb; T._avisou = {};
   $('#restNext').innerHTML = texto || '';
   $('#rest').classList.add('on');
-  tickTimer();
+  audioCtx(); manterTela(); agendarSW(true);
+  clearInterval(T.iv); cancelAnimationFrame(T.raf);
+  T.iv = setInterval(tickTimer, 500);   // continua rodando com a página em segundo plano (rAF não)
+  laco();
 }
+function laco() { if (!T.on) return; tickTimer(); T.raf = requestAnimationFrame(laco); }
 function tickTimer() {
   if (!T.on) return;
   const rest = (T.fim - Date.now()) / 1000;
@@ -931,20 +1015,20 @@ function tickTimer() {
   [3, 2, 1].forEach(n => {
     if (rest <= n && rest > n - 1 && !T._avisou[n]) { T._avisou[n] = 1; beep(660, .08); }
   });
-  if (rest <= 0 && !T._avisou.fim) { T._avisou.fim = 1; beep(880, .35); vibrar([120, 60, 120]); }
-  T.raf = requestAnimationFrame(tickTimer);
+  if (rest <= 0 && !T._avisou.fim) { T._avisou.fim = 1; fimDescanso(); }
 }
 function fecharTimer() {
   if (!T.on) return;
-  T.on = false; cancelAnimationFrame(T.raf);
+  T.on = false; cancelAnimationFrame(T.raf); clearInterval(T.iv); pararAlarme(); agendarSW(false);
   $('#rest').classList.remove('on');
   const usado = Math.round((Date.now() - T.inicio) / 1000);
   const cb = T.cb; T.cb = null;
   cb && cb(usado);
 }
 $('#restSkip').onclick = fecharTimer;
-$('#restPlus').onclick = () => { T.fim += 30000; T.dur += 30; T._avisou = {}; };
-$('#restMinus').onclick = () => { T.fim -= 30000; };
+$('#restPlus').onclick = () => { T.fim += 30000; T.dur += 30; T._avisou = {}; pararAlarme(); agendarSW(true); };
+$('#restMinus').onclick = () => { T.fim -= 30000; agendarSW(true); };
+$('#rest').addEventListener('click', pararAlarme);   // qualquer toque na tela silencia o alarme
 
 /* relógio da sessão */
 setInterval(() => {
@@ -1019,7 +1103,7 @@ function renderHome() {
   if (ehDeload()) {
     h += `<div class="card"><div class="alert info"><span class="ic">↓</span><div>
       <b>Semana de deload.</b> As cargas caem para ${st.cfg.deload}% e a carga de trabalho gravada não muda.
-      Ao terminar a semana 4, o ciclo reinicia com as cargas da semana 3.</div></div></div>`;
+      ${semana() === SEMANAS_CICLO ? 'Ao terminar esta semana, o ciclo de 3 meses reinicia com as cargas da semana 11.' : 'Depois do deload, o próximo bloco de 4 semanas retoma a progressão.'}</div></div></div>`;
   }
 
   h += `<div class="card"><div class="card-hd"><h2>Cargas de trabalho</h2>
@@ -1034,17 +1118,21 @@ function renderHome() {
         ${tags.length ? `<div class="t" style="color:var(--boa);margin-top:3px">${tags.join(' · ')}</div>` : ''}</div>`;
     }).join('') + `</div></div>`;
 
-  h += `<div class="card"><div class="card-hd"><h2>Ciclo</h2></div>
-    <div style="display:flex;gap:6px;margin-bottom:10px">` +
-    [1, 2, 3, 4].map(w => {
-      const feita = Math.min(4, Math.max(0, st.sessoesCiclo - (w - 1) * 4));
-      const at = semana() === w;
-      return `<div style="flex:1;text-align:center">
-        <div style="height:6px;border-radius:3px;background:${w === 4 ? 'var(--iron-600)' : 'var(--iron-700)'};overflow:hidden">
-          <div style="height:100%;width:${feita / 4 * 100}%;background:${w === 4 ? 'var(--boa)' : 'var(--oxido)'}"></div></div>
-        <div class="eyebrow" style="margin-top:5px;color:${at ? 'var(--oxido-soft)' : 'var(--cal-dim)'}">S${w}</div></div>`;
+  const iniC = cicloInicioData(), fimC = iniC ? fimCiclo(iniC) : null, ritmo = ritmoCiclo();
+  h += `<div class="card"><div class="card-hd"><h2>Ciclo de 3 meses</h2>
+    <span class="eyebrow grow" style="text-align:right">bloco ${bloco()} de 3</span></div>
+    <div style="display:flex;gap:3px;margin-bottom:10px">` +
+    Array.from({ length: SEMANAS_CICLO }, (_, k) => k + 1).map(w => {
+      const feita = Math.min(SESS_SEMANA, Math.max(0, st.sessoesCiclo - (w - 1) * SESS_SEMANA));
+      const at = semana() === w, dl = DELOADS.includes(w);
+      return `<div style="flex:1;text-align:center;${dl && w < SEMANAS_CICLO ? 'margin-right:5px' : ''}">
+        <div style="height:6px;border-radius:3px;background:${dl ? 'var(--iron-600)' : 'var(--iron-700)'};overflow:hidden">
+          <div style="height:100%;width:${feita / SESS_SEMANA * 100}%;background:${dl ? 'var(--boa)' : 'var(--oxido)'}"></div></div>
+        <div class="eyebrow" style="margin-top:5px;font-size:9px;color:${at ? 'var(--oxido-soft)' : 'var(--cal-dim)'}">${w}</div></div>`;
     }).join('') + `</div>
-    <p class="muted" style="margin:0;font-size:13px">${st.sessoesCiclo} de 16 sessões · ${faseTexto()} · ${total} treino${total === 1 ? '' : 's'} registrado${total === 1 ? '' : 's'} no total</p></div>`;
+    <p class="muted" style="margin:0;font-size:13px">${st.sessoesCiclo} de ${SESS_CICLO} sessões · semana ${semana()} · ${faseTexto()}
+      ${fimC ? '<br>término previsto ' + fimC.toLocaleDateString('pt-BR') : ''}${ritmo == null ? '' : ' · ritmo ' + (ritmo >= 0 ? '+' : '') + ritmo + ' sessões vs 4/semana'}
+      <br>${total} treino${total === 1 ? '' : 's'} registrado${total === 1 ? '' : 's'} no total</p></div>`;
 
   if (ultima) {
     h += `<div class="card"><div class="card-hd"><h2>Último treino</h2>
@@ -1348,12 +1436,12 @@ function renderAjustes() {
   </div>
 
   <div class="card"><div class="card-hd"><h2>Ciclo</h2></div>
-    <div class="field"><label>Semana atual<small>automático a cada 4 sessões</small></label>
+    <div class="field"><label>Semana atual<small>automático a cada 4 sessões · ciclo de 12 semanas</small></label>
       <select data-cfg-sel="semanaManual">
         <option value="0" ${!st.semanaManual ? 'selected' : ''}>Automático (${semana()})</option>
-        ${[1, 2, 3, 4].map(w => `<option value="${w}" ${st.semanaManual === w ? 'selected' : ''}>Semana ${w}</option>`).join('')}
+        ${Array.from({ length: SEMANAS_CICLO }, (_, k) => k + 1).map(w => `<option value="${w}" ${st.semanaManual === w ? 'selected' : ''}>Semana ${w}${DELOADS.includes(w) ? ' (deload)' : ''}</option>`).join('')}
       </select></div>
-    <div class="field"><label>Deload<small>percentual da carga na semana 4</small></label>
+    <div class="field"><label>Deload<small>percentual da carga nas semanas 4, 8 e 12</small></label>
       <input type="number" min="40" max="90" step="5" value="${st.cfg.deload}" data-cfg="deload"></div>
     <div class="field"><label>Próximo treino</label>
       <select data-cfg-sel="proximo"><option value="A" ${st.proximo === 'A' ? 'selected' : ''}>Treino A</option>
@@ -1383,6 +1471,11 @@ function renderAjustes() {
       <input type="checkbox" ${st.cfg.som ? 'checked' : ''} data-cfg-bool="som"></div>
     <div class="field"><label>Vibração</label>
       <input type="checkbox" ${st.cfg.vibrar ? 'checked' : ''} data-cfg-bool="vibrar"></div>
+    <div class="field"><label>Alarme repetido<small>toca e vibra até você tocar na tela (máx. ~35 s)</small></label>
+      <input type="checkbox" ${st.cfg.alarme ? 'checked' : ''} data-cfg-bool="alarme"></div>
+    <div class="field"><label>Notificação no fim do descanso<small>com o app em segundo plano · permissão: ${'Notification' in window ? ({ granted: 'concedida', denied: 'negada', default: 'não pedida' }[Notification.permission]) : 'indisponível'}</small></label>
+      <input type="checkbox" ${st.cfg.notificar ? 'checked' : ''} data-cfg-bool="notificar"></div>
+    <button class="btn sm ghost" data-act="notif">Permitir notificações</button>
     ${Object.keys(EX).map(id => `<div class="field"><label>Descanso · ${EX[id].nome}<small>segundos</small></label>
       <input type="number" min="30" max="360" step="15" value="${EX[id].descanso}" data-desc="${id}"></div>`).join('')}
   </div>
@@ -1460,7 +1553,8 @@ document.addEventListener('click', ev => {
 
   if (a === 'iniciar') {
     novaSessao(el.dataset.t); ir('sessao');
-    try { navigator.wakeLock && navigator.wakeLock.request('screen'); } catch (e) { }
+    manterTela(); audioCtx();
+    if ('Notification' in window && Notification.permission === 'default' && st.cfg.notificar) Notification.requestPermission().catch(() => { });
     return;
   }
   if (a === 'ir-sessao') return ir('sessao');
@@ -1544,6 +1638,7 @@ document.addEventListener('click', ev => {
         st = estadoNovo(); limparSessao(); salvar(); ir('home'); toast('Tudo zerado');
       }
       break;
+    case 'notif': pedirNotificacao(); break;
     case 'instalar':
       if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt = null; }
       else toast('Use o menu do navegador: Adicionar à tela de início');
@@ -1635,7 +1730,7 @@ st = carregar();
 aplicaDescansos();
 checarReentrada();
 retomarSessao();
-if (sess) { ir('sessao'); } else { ir('home'); }
+if (sess) { ir('sessao'); manterTela(); } else { ir('home'); }
 salvar();
 
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {

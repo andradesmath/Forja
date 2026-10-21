@@ -67,21 +67,24 @@ Você tem a última palavra.
 
 ---
 
-## 4. Periodização
+## 4. Periodização — ciclo de 3 meses
+
+12 semanas = 3 blocos de 4 semanas, 4 sessões por semana (48 sessões).
 
 | Semana | O que acontece |
 |---|---|
 | 1 | Adaptação com as cargas iniciais |
-| 2–3 | Progressão linear conforme o feedback |
-| 4 | Deload a 65% (ajustável em Ajustes) |
-| Ciclo novo | Reinicia com as cargas da semana 3 |
+| 2–3, 5–7, 9–11 | Progressão linear conforme o feedback |
+| 4, 8, 12 | Deload a 65% (ajustável em Ajustes) |
+| Ciclo novo | Reinicia com as cargas da semana 11 |
 
-A semana avança a cada 4 sessões registradas (16 sessões = 1 ciclo). Se você treinar
-fora do ritmo, force a semana em *Ajustes → Ciclo*.
+A semana avança a cada 4 sessões registradas. A tela inicial mostra o bloco atual, a data
+prevista de término (início + 3 meses) e o ritmo em relação a 4 sessões por semana. O ciclo
+só fecha ao completar as 48 sessões; se você treinar menos, ele passa de 3 meses.
+Para treinar fora do ritmo, force a semana em *Ajustes → Ciclo*.
 
 **Durante o deload a carga de trabalho gravada não muda.** A autorregulação continua
-ativa para ajustar as séries do dia, mas o ciclo seguinte parte das cargas da semana 3 —
-que é exatamente o que você pediu.
+ativa para ajustar as séries do dia, mas o próximo bloco parte das cargas gravadas.
 
 ---
 
@@ -175,3 +178,17 @@ forja/
 
 Nenhuma dependência externa, nenhuma requisição de rede em uso normal — só o link
 opcional de vídeos de técnica, que abre uma busca no YouTube.
+
+---
+
+## 11. Alarme, notificações e tela ligada
+
+- **Alarme**: ao zerar o descanso o app toca e vibra repetidamente até você tocar na tela
+  (máx. ~35 s). Desative em *Ajustes → Timer e avisos*.
+- **Notificação**: libere em *Ajustes → Permitir notificações*. Com o app em segundo plano,
+  o aviso aparece quando o descanso acaba.
+- **Tela ligada**: durante o treino o app pede ao celular para não apagar a tela e religa a
+  trava ao voltar para o app.
+- **Limite**: sem servidor de push, nenhum PWA garante alarme com o app fechado ou o celular
+  bloqueado. No iPhone, notificações só funcionam com o app instalado na tela de início
+  (iOS 16.4+). O mais confiável é manter o app aberto e a tela ligada.
