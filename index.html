@@ -341,17 +341,17 @@ const EX = {
     seguranca: 'Sem parceiro: travas de segurança na altura do peito, sempre. Alternativa segura para falhar: repetir com halteres.'
   },
   remada: {
-    nome: 'Remada no banco inclinado', grupo: 'superior', imp: 'barraLonga',
-    series: 3, reps: 8, descanso: 120, inicial: 10, unilateral: false,
+    nome: 'Remada no banco inclinado', grupo: 'superior', imp: 'halterLivre',
+    series: 3, reps: 8, descanso: 120, inicial: 4, unilateral: false,
     tecnica: [
       '<b>Banco</b> inclinado entre 30° e 45°, peito e abdômen apoiados; pés firmes no chão, pescoço alinhado à coluna.',
-      '<b>Posição inicial</b>: braços estendidos pendendo à frente, escápulas relaxadas, peito colado no encosto.',
+      '<b>Posição inicial</b>: um halter em cada mão, braços estendidos pendendo à frente, escápulas relaxadas, peito colado no encosto.',
       '<b>Puxada</b> em direção ao umbigo/parte baixa das costelas, cotovelo rente ao corpo.',
       '<b>Escápulas</b> se juntam no fim; segure 1 s antes de descer.',
       '<b>Descida</b> controlada até estender o cotovelo, sem perder o apoio do peito.',
       '<b>Sem impulso</b>: o peito não descola do banco. Se descolar, a carga está alta.'
     ],
-    seguranca: 'O banco alivia a lombar, mas a carga parte do chão: regule a altura para ela não bater no chão na descida e mantenha o pescoço neutro. Peito descolando do banco = reduza a carga.'
+    seguranca: 'O banco alivia a lombar, mas os halteres partem do chão: regule a altura para eles não baterem no chão na descida e mantenha o pescoço neutro. Peito descolando do banco = reduza a carga.'
   },
   terra: {
     nome: 'Levantamento terra', grupo: 'inferior', imp: 'barraLonga',
@@ -469,7 +469,9 @@ function salvar() {
 }
 
 /* ---------- 3. MOTOR DE ANILHAS ---------- */
-function pontas(imp) { return imp === 'halteres' ? 4 : 2; }   // halteres = 2 pares de pontas
+/* 'halterLivre' = halteres contados só pelas anilhas (cabo sem peso); 'halteres' = cabo pesa cfg.halterVazio */
+function ehHalter(imp) { return imp === 'halteres' || imp === 'halterLivre'; }
+function pontas(imp) { return ehHalter(imp) ? 4 : 2; }   // halteres = 2 pares de pontas
 
 function montar(alvo, imp, inv) {
   const e = pontas(imp), cap = {};
@@ -489,14 +491,15 @@ function montar(alvo, imp, inv) {
 function snap(alvo, imp) { return montar(Math.max(0, alvo), imp, st.inv).peso; }
 
 function pesoImplemento(lado, imp) {   // peso de cada halter, ou da barra montada
+  if (imp === 'halterLivre') return 2 * lado;
   if (imp === 'halteres') return st.cfg.halterVazio + 2 * lado;
   return (imp === 'barraCurta' ? st.cfg.barraCurta : st.cfg.barraLonga) + 2 * lado;
 }
 function pesoTotal(lado, imp) {
-  return imp === 'halteres' ? 2 * pesoImplemento(lado, imp) : pesoImplemento(lado, imp);
+  return ehHalter(imp) ? 2 * pesoImplemento(lado, imp) : pesoImplemento(lado, imp);
 }
 function rotuloCarga(lado, imp) {
-  return imp === 'halteres'
+  return ehHalter(imp)
     ? pesoImplemento(lado, imp).toFixed(0) + ' kg por halter'
     : pesoTotal(lado, imp).toFixed(0) + ' kg na barra';
 }
@@ -504,7 +507,7 @@ function sleeveHTML(lado, imp) {
   const m = montar(lado, imp, st.inv);
   let h = '<div class="sleeve">';
   if (!m.combo.length) {
-    h += '<span class="collar"></span><span class="empty">Sem anilhas — só ' + (imp === 'halteres' ? 'o halter vazio' : 'a barra') + '</span>';
+    h += '<span class="collar"></span><span class="empty">Sem anilhas — só ' + (ehHalter(imp) ? 'o halter vazio' : 'a barra') + '</span>';
   } else {
     m.combo.forEach(([kg, q]) => { for (let i = 0; i < q; i++) h += '<span class="plate p' + kg + '">' + kg + '</span>'; });
     h += '<span class="collar"></span>';
@@ -598,7 +601,7 @@ function incremento(id) { return INC[EX[id].grupo]; }
 function seriesAquecimento(id, lado) {
   const e = EX[id];
   const a = [
-    { lado: 0, reps: alvoReps(id) + 3, nota: (e.imp === 'halteres' ? 'halteres vazios' : 'barra vazia') + ', pausa de 2 s no ponto de maior alongamento' },
+    { lado: 0, reps: alvoReps(id) + 3, nota: (ehHalter(e.imp) ? 'halteres sem anilhas' : 'barra vazia') + ', pausa de 2 s no ponto de maior alongamento' },
     { lado: snap(lado * 0.5, e.imp), reps: alvoReps(id), nota: 'metade da carga, amplitude máxima e sem pressa' }
   ];
   return a.filter((s, i) => i === 0 || s.lado > 0);
@@ -803,7 +806,7 @@ function epley(peso, reps) { return reps > 0 ? peso * (1 + reps / 30) : 0; }
 function melhor1RM(id) {
   let m = 0, quando = null;
   st.hist.forEach(h => h.ex.filter(x => x.id === id).forEach(x => x.series.forEach(s => {
-    const e = epley(EX[id].imp === 'halteres' ? s.total : s.total, s.reps);
+    const e = epley(s.total, s.reps);
     if (e > m) { m = e; quando = h.data; }
   })));
   return { valor: m, data: quando };
@@ -1259,7 +1262,7 @@ function renderExercicio() {
     <div class="eyebrow" style="margin-bottom:2px">Aquecimento no exercício</div>
     ${x.aquec.map((a, i) => `<div class="check ${x.aquecFeito[i] ? 'on' : ''}" data-act="aq" data-i="${i}" style="padding:9px 0">
       <div class="box">&#10003;</div><div class="txt" style="font-size:13.5px">
-      ${a.lado === 0 ? (e.imp === 'halteres' ? 'Halteres vazios' : 'Barra vazia') : a.lado + ' kg por lado'} × ${a.reps}${e.unilateral ? ' por perna' : ''}
+      ${a.lado === 0 ? (ehHalter(e.imp) ? 'Halteres sem anilhas' : 'Barra vazia') : a.lado + ' kg por lado'} × ${a.reps}${e.unilateral ? ' por perna' : ''}
       <small>${a.nota}</small></div></div>`).join('')}
     <div class="divider"></div>` : '';
 
@@ -1322,7 +1325,7 @@ function renderExercicio() {
       <div class="sub">${rotuloCarga(x.lado, e.imp)}<br>${e.series} × ${alvo}${e.unilateral ? ' por perna' : ''} · descanso ${mmss(e.descanso)}</div>
     </div>
     ${sleeveHTML(x.lado, e.imp)}
-    <p class="muted center" style="font-size:12px;margin:6px 0 0">${textoCombo(x.lado, e.imp)}${e.imp === 'halteres' ? ' · em cada ponta dos dois halteres' : ''}</p>
+    <p class="muted center" style="font-size:12px;margin:6px 0 0">${textoCombo(x.lado, e.imp)}${ehHalter(e.imp) ? ' · em cada ponta dos dois halteres' : ''}</p>
     <div style="display:flex;gap:8px;margin-top:10px;justify-content:center">
       <button class="btn sm ghost" data-act="carga" data-d="-1">&minus; carga</button>
       <button class="btn sm ghost" data-act="carga" data-d="1">+ carga</button>
@@ -1815,6 +1818,14 @@ function exportarJSON() {
 
 /* ---------- 14. INÍCIO ---------- */
 function aplicaDescansos() {
+  /* migração única: remada passou de barra para halteres. Treinos antigos ficam intactos (guardam imp/lado/total).
+     Carga antiga (kg/lado de barra, ~34 kg totais) vira o equivalente em halteres (~8 kg por ponta = 32 kg totais). */
+  if (!st.mig) st.mig = {};
+  if (!st.mig.remadaHalter) {
+    st.mig.remadaHalter = 1;
+    st.cargas.remada = 8;
+    salvar();
+  }
   if (st.cfg && st.cfg.descansos) Object.keys(st.cfg.descansos).forEach(id => { if (EX[id]) EX[id].descanso = st.cfg.descansos[id]; });
   Object.keys(EX).forEach(id => { st.cargas[id] = snap(st.cargas[id], EX[id].imp); });
 }

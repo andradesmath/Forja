@@ -14,7 +14,7 @@ longa de 10 kg. Com barra de 10 kg, os totais reais ficam assim:
 |---|---|---|---|
 | Agachamento | 10 kg | **30 kg** | 40 kg |
 | Supino reto | 15 kg | **40 kg** | 50 kg |
-| Remada no banco inclinado | 10 kg | **30 kg** | 40 kg |
+| Remada no banco inclinado (halteres, só anilhas) | 8 kg por ponta | **16 kg por halter (32 kg)** | — |
 | Levantamento terra | 20 kg | **50 kg** | 60 kg |
 | Desenvolvimento militar | 5 kg | **20 kg** | 30 kg |
 | Afundo com halteres | 3 kg | **8 kg por halter** | 8 kg por halter |

@@ -1,5 +1,5 @@
 /* FORJA — service worker: cache com atualização em segundo plano + push de fim de descanso */
-const CACHE = "forja-v7";
+const CACHE = "forja-v8";
 const ARQUIVOS = ['./', './merge.js', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable.png'];
 
 /* respostas redirecionadas (ex.: /index.html -> /, por causa do cleanUrls) não podem ser servidas a navegações */
